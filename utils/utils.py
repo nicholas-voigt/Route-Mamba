@@ -1,40 +1,58 @@
 import torch
-import math
-from torch.nn.parallel import DistributedDataParallel as DDP
 
-def torch_load_cpu(load_path):
-    return torch.load(load_path, map_location=lambda storage, loc: storage)  # Load on CPU
 
-def get_inner_model(model):
-    return model.module if isinstance(model, DDP) else model
-
-def move_to(var, device):
-    if isinstance(var, dict):
-        return {k: move_to(v, device) for k, v in var.items()}
-    return var.to(device)
-
-def move_to_cuda(var, device):
-    if isinstance(var, dict):
-        return {k: move_to(v, device) for k, v in var.items()}
-    return var.cuda(device)
-
-def clip_grad_norms(param_groups, max_norm=math.inf):
+def greedy_initial_tour(coords):
     """
-    Clips the norms for all param groups to max_norm and returns gradient norms before clipping
-    :param optimizer:
-    :param max_norm:
-    :param gradient_norms_log:
-    :return: grad_norms, clipped_grad_norms: list with (clipped) gradient norms per group
+    Creates an initial tour for the TSP problem using a greedy nearest neighbor heuristic.
+    Args:
+        coords: (batch_size, seq_length, 2)
+    Returns: 
+        (batch_size, seq_length, 2) - nodes in greedy order
     """
-    grad_norms = [
-        torch.nn.utils.clip_grad_norm(
-            group['params'],
-            max_norm if max_norm > 0 else math.inf,  # Inf so no clipping but still call to calc
-            norm_type=2
-        )
-        for idx, group in enumerate(param_groups)
-    ]
-    grad_norms_clipped = [min(g_norm, max_norm) for g_norm in grad_norms] if max_norm > 0 else grad_norms
-    return grad_norms, grad_norms_clipped
+    batch_size, size, _ = coords.size()
+    device = coords.device
+    visited = torch.zeros(batch_size, size, dtype=torch.bool, device=device)
+    route = torch.zeros(batch_size, size, dtype=torch.long, device=device)
+    current = torch.zeros(batch_size, dtype=torch.long, device=device)
+    route[:, 0] = current
+    visited[:, 0] = True
+    for i in range(1, size):
+        last_coords = coords[torch.arange(batch_size), current].unsqueeze(1)
+        dists = torch.norm(coords - last_coords, dim=2)
+        dists[visited] = float('inf')
+        next_node = dists.argmin(dim=1)
+        route[:, i] = next_node
+        visited[torch.arange(batch_size), next_node] = True
+        current = next_node
+    # Reorder coords according to route
+    greedy_coords = coords.gather(1, route.unsqueeze(-1).expand(-1, -1, 2))
+    return greedy_coords
 
+def check_feasibility(solutions):
+    """
+    Checks if each tour in solutions visits every node exactly once.
+    Args:
+        solutions: (batch_size, size) tensor of node indices (permutations)
+    Raises:
+        AssertionError if any tour is infeasible.
+    """
+    batch_size, size = solutions.size()
+    expected = torch.arange(size, device=solutions.device).view(1, -1).expand(batch_size, -1)
+    is_feasible = (solutions.sort(dim=1)[0] == expected).all(dim=1)
+    assert is_feasible.all(), "One or more tours do not visit all nodes exactly once."
 
+def compute_soft_tour_length(soft_tour):
+    """
+    Computes the (differentiable) tour length for a soft tour.
+    Args:
+        soft_tour: (batch_size, seq_length, 2) - soft tour coordinates
+    Returns:
+        tour_length: (batch_size,) - differentiable tour length
+    """
+    # Compute pairwise distances between consecutive nodes
+    diff = soft_tour[:, 1:, :] - soft_tour[:, :-1, :]  # (batch_size, seq_length-1, 2)
+    segment_lengths = torch.norm(diff, dim=-1)         # (batch_size, seq_length-1)
+    # Add distance from last to first to complete the tour
+    last_to_first = torch.norm(soft_tour[:, 0, :] - soft_tour[:, -1, :], dim=-1)  # (batch_size,)
+    tour_length = segment_lengths.sum(dim=1) + last_to_first
+    return tour_length
