@@ -123,10 +123,11 @@ class ValueDecoder(nn.Module):
     Value Decoder for the Mamba model.
     Takes output score vectors from Mamba and performs gumbel sinkhorn sorting to generate a new tour.
     """
-    def __init__(self, score_dim, seq_length):
+    def __init__(self, score_dim, gs_tau, gs_iters):
         super(ValueDecoder, self).__init__()
         self.score_dim = score_dim
-        self.seq_length = seq_length
+        self.gs_tau = gs_tau
+        self.gs_iters = gs_iters
 
         self.score_proj = nn.Linear(self.score_dim, 1)
 
@@ -136,51 +137,39 @@ class ValueDecoder(nn.Module):
         return -torch.log(-torch.log(U + eps) + eps)
 
     # ---- Sinkhorn normalization ----
-    def sinkhorn(self, log_alpha, n_iters=20):
-        for _ in range(n_iters):
+    def sinkhorn(self, log_alpha):
+        for _ in range(self.gs_iters):
             log_alpha = log_alpha - torch.logsumexp(log_alpha, dim=2, keepdim=True)  # row norm
             log_alpha = log_alpha - torch.logsumexp(log_alpha, dim=1, keepdim=True)  # col norm
         return torch.exp(log_alpha)
 
     # ---- Gumbel-Sinkhorn operator ----
-    def gumbel_sinkhorn(self, scores, tau=1.0, n_iters=20, hard=False):
+    def gumbel_sinkhorn(self, scores):
         """
         Args:
             scores: (batch, N)
-            tau: temperature for Gumbel noise
-            n_iters: number of Sinkhorn iterations
-            hard: if True, returns a hard permutation matrix (for inference), 
-                if False, returns a soft permutation matrix (for training)
-        Returns: 
+        Returns:
             (batch, N, N) permutation matrix
         """
-        batch_size, N = scores.shape
+        _, N = scores.shape
         # Expand scores to NxN matrix by repeating across columns
         log_alpha = scores.unsqueeze(2).expand(-1, -1, N)  # (batch, N, N)
         # Add Gumbel noise
         gumbel_noise = self.sample_gumbel(log_alpha.shape, device=scores.device)
-        log_alpha = (log_alpha + gumbel_noise) / tau
+        log_alpha = (log_alpha + gumbel_noise) / self.gs_tau
         # Sinkhorn normalization to get doubly stochastic matrix
-        P_hat = self.sinkhorn(log_alpha, n_iters=n_iters)
-        if hard:
-            # Convert to a true permutation matrix (no gradient)
-            idx = torch.argmax(P_hat, dim=2)
-            P_hard = torch.zeros_like(P_hat).scatter_(2, idx.unsqueeze(2), 1.0)
-            P_hat = (P_hard - P_hat).detach() + P_hat
+        P_hat = self.sinkhorn(log_alpha)
         return P_hat  # (batch, N, N)
 
-    def forward(self, scores, tau=1.0, n_iters=20, hard=False):
+    def forward(self, scores):
         """
         Args:
             scores: (batch, N, score_dim) - scores from Mamba model
-            tau: temperature for Gumbel noise
-            n_iters: number of Sinkhorn iterations
-            hard: if True, returns a hard permutation matrix (for inference)
         Returns:
             P_hat: (batch, N, N) - soft permutation matrix
         """
         # Project multidimensional scores to scalar per node
         scalar_scores = self.score_proj(scores).squeeze(-1)  # (batch, N)
         # Apply Gumbel-Sinkhorn
-        P_hat = self.gumbel_sinkhorn(scalar_scores, tau=tau, n_iters=n_iters, hard=hard)
+        P_hat = self.gumbel_sinkhorn(scalar_scores)
         return P_hat
