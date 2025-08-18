@@ -34,12 +34,11 @@
 ##            END OF SBATCH COMMANDS           ##
 #################################################
 
-# Purge the environment, load the modules we require.
+# Purge the enviromnent, load the modules we require.
 # Refer to https://violet.scis.dev/docs/Advanced%20settings/module for more information
 module purge
-module purge
-module load Python/3.12.8-GCCcore-13.3.0
-module load cuDNN/9.5.0.50-CUDA-12.6.0
+module load Python/3.11.7
+module load CUDA/12.4.0
 
 # Create a virtual environment can be commented off if you already have a virtual environment
 # python3.12 -m venv ~/Capstone
@@ -49,10 +48,9 @@ module load cuDNN/9.5.0.50-CUDA-12.6.0
 source ~/Capstone/bin/activate
 
 # If you require any packages, install it as usual before the srun job submission.
-pip install numpy
-pip install scipy
-pip install torch torchvision torchaudio
-pip install mamba_ssm
-
+pip3 install numpy
+pip3 install scipy
+pip3 install torch torchvision torchaudio
+pip3 install mamba_ssm
 # Submit your job to the cluster
 srun --gres=gpu:1 python run.py
