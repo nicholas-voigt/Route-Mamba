@@ -57,4 +57,4 @@ pip3 install torch torchvision torchaudio
 pip3 install mamba_ssm
 
 # Submit your job to the cluster
-srun --gres=gpu:1 python run.py --load_path outputs/run_name_20250818T185749/checkpoint_run_name_20250818T185749_epoch3.pt
+srun --gres=gpu:1 python run.py --eval_only --load_path outputs/run_name_20250818T185749/checkpoint_run_name_20250818T185749_epoch3.pt
