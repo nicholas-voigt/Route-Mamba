@@ -1,3 +1,4 @@
+import os
 import torch
 from torch.utils.data import DataLoader
 from scipy.optimize import linear_sum_assignment
@@ -24,6 +25,22 @@ class SurrogateLoss:
             params = self.actor.parameters(),
             lr = opts.lr_model
         )
+
+    def save(self, epoch, dir="models", path_prefix="checkpoint"):
+        """
+        Saves the actor model's state_dict after each epoch.
+        Args:
+            epoch: Current epoch number (int)
+            path_prefix: Prefix for the checkpoint file (default: "checkpoint")
+        """
+        save_path = os.path.join(dir, f"{path_prefix}_epoch{epoch+1}.pt")
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': self.actor.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'opts': self.opts
+        }, save_path)
+        print(f"Model saved to {save_path}")
 
     def train(self, problem: TSP):
         """
@@ -72,6 +89,9 @@ class SurrogateLoss:
 
             avg_loss = total_loss / len(training_dataloader.dataset) # type: ignore
             print(f"Epoch {epoch+1}/{self.opts.K_epochs} | Avg Loss: {avg_loss:.4f}")
+            
+            # Save model checkpoint
+            self.save(epoch)
 
     def evaluate(self, problem: TSP):
         """
