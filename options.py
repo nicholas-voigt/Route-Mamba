@@ -44,6 +44,7 @@ def get_options(args=None):
     parser.add_argument('--log_dir', default='logs', help='directory to write TensorBoard information to')
     parser.add_argument('--log_step', type=int, default=50, help='log info every log_step gradient steps')
     parser.add_argument('--output_dir', default='outputs', help='directory to write output models to')
+    parser.add_argument('--no_save', action='store_true', help='do not save models, only run inference')
     parser.add_argument('--run_name', default='run_name', help='name to identify the run')
     parser.add_argument('--checkpoint_epochs', type=int, default=1, help='save checkpoint every n epochs (default 1), 0 to save no checkpoints')
     
@@ -58,6 +59,6 @@ def get_options(args=None):
         opts.output_dir,
         "{}_{}".format(opts.problem, opts.graph_size),
         opts.run_name
-    ) if not opts.no_saving else None
+    ) if not opts.no_save else None
 
     return opts
