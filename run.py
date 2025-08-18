@@ -43,6 +43,10 @@ def run(opts):
     # Figure out the RL algorithm
     agent = load_agent(opts.RL_agent)(problem.size,  opts)
 
+    # Load model checkpoint if specified
+    if opts.load_path is not None:
+        agent.load(opts.load_path)
+
     # Check if to evaluate only or train the model
     if opts.eval_only:
         # Start inference

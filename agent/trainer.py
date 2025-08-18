@@ -41,6 +41,25 @@ class SurrogateLoss:
             'opts': self.opts
         }, save_path)
         print(f"Model saved to {save_path}")
+    
+    def load(self, checkpoint_path):
+        """
+        Loads the actor model's state_dict and optimizer state from a checkpoint file.
+        Args:
+            checkpoint_path: Path to either the checkpoint file (.pt) or the directory containing it. If directory, latest checkpoint will be loaded.
+        """
+        if os.path.isdir(checkpoint_path):
+            # If a directory is provided, load the latest checkpoint
+            checkpoint_files = [f for f in os.listdir(checkpoint_path) if f.endswith('.pt')]
+            if not checkpoint_files:
+                raise FileNotFoundError(f"No checkpoint files found in directory: {checkpoint_path}")
+            checkpoint_path = os.path.join(checkpoint_path, sorted(checkpoint_files)[-1])
+
+        checkpoint = torch.load(checkpoint_path, map_location=self.opts.device)
+        self.actor.load_state_dict(checkpoint['model_state_dict'])
+        if 'optimizer_state_dict' in checkpoint:
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        print(f"Model loaded from {checkpoint_path}")
 
     def train(self, problem: TSP):
         """
