@@ -8,7 +8,7 @@
 #################################################
 
 #SBATCH --nodes=1                   # How many nodes required? Usually 1
-#SBATCH --cpus-per-task=1           # Number of CPU to request for the job
+#SBATCH --cpus-per-task=12          # Number of CPU to request for the job
 #SBATCH --mem=12GB                  # How much memory does your job require?
 #SBATCH --gres=gpu:1                # Do you require GPUS? If not delete this line
 #SBATCH --time=00-01:00:00          # How long to run the job for? Jobs exceed this time will be terminated
@@ -41,11 +41,14 @@ module load Python/3.13.1-GCCcore-13.3.0
 module load cuDNN/9.5.0.50-CUDA-12.6.0
 
 # Create a virtual environment can be commented off if you already have a virtual environment
-# python3 -m venv ~/Capstone
+python3 -m venv ~/Capstone
 
 # This command assumes that you've already created the environment previously
 # We're using an absolute path here. You may use a relative path, as long as SRUN is execute in the same working directory
 source ~/Capstone/bin/activate
+
+# Find out which GPU you are using
+srun whichgpu
 
 # If you require any packages, install it as usual before the srun job submission.
 pip3 install numpy
