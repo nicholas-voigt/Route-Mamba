@@ -55,7 +55,7 @@ class SurrogateLoss:
                 raise FileNotFoundError(f"No checkpoint files found in directory: {checkpoint_path}")
             checkpoint_path = os.path.join(checkpoint_path, sorted(checkpoint_files)[-1])
 
-        checkpoint = torch.load(checkpoint_path, map_location=self.opts.device)
+        checkpoint = torch.load(checkpoint_path, map_location=self.opts.device, weights_only=False)
         self.actor.load_state_dict(checkpoint['model_state_dict'])
         if 'optimizer_state_dict' in checkpoint:
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
