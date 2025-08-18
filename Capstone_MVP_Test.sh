@@ -37,11 +37,11 @@
 # Purge the enviromnent, load the modules we require.
 # Refer to https://violet.scis.dev/docs/Advanced%20settings/module for more information
 module purge
-module load Python/3.11.7
-module load CUDA/12.4.0
+module load Python/3.13.1-GCCcore-13.3.0
+module load cuDNN/9.5.0.50-CUDA-12.6.0
 
 # Create a virtual environment can be commented off if you already have a virtual environment
-# python3.12 -m venv ~/Capstone
+# python3 -m venv ~/Capstone
 
 # This command assumes that you've already created the environment previously
 # We're using an absolute path here. You may use a relative path, as long as SRUN is execute in the same working directory
@@ -52,5 +52,6 @@ pip3 install numpy
 pip3 install scipy
 pip3 install torch torchvision torchaudio
 pip3 install mamba_ssm
+
 # Submit your job to the cluster
 srun --gres=gpu:1 python run.py
