@@ -15,7 +15,7 @@
                                     # Format <DD-HH:MM:SS> eg. 5 days 05-00:00:00
                                     # Format <DD-HH:MM:SS> eg. 24 hours 1-00:00:00 or 24:00:00
 #SBATCH --mail-type=BEGIN,END,FAIL  # When should you receive an email?
-#SBATCH --output=~/%u.%j.out        # Where should the log files go?
+#SBATCH --output=logs/%u.%j.out        # Where should the log files go?
                                     # You must provide an absolute path eg /common/home/module/username/
                                     # If no paths are provided, the output file will be placed in your current working directory
 #SBATCH --requeue                   # Remove if you do not want the workload scheduler to requeue your job after preemption
