@@ -28,7 +28,7 @@
 #SBATCH --account=student                           # The account you've been assigned (normally student)
 #SBATCH --qos=studentqos                            # What is the QOS assigned to you? Check with myinfo command
 #SBATCH --mail-user=nc.voigt.2024@mitb.smu.edu.sg   # Who should receive the email notifications
-#SBATCH --job-name=Capstone MVP Test                # Give the job a name
+#SBATCH --job-name=Capstone_MVP_Test                # Give the job a name
 
 #################################################
 ##            END OF SBATCH COMMANDS           ##
@@ -51,6 +51,6 @@ source ~/Capstone/bin/activate
 pip3 install numpy
 pip3 install scipy
 pip3 install torch torchvision torchaudio
-# pip3 install mamba_ssm
+pip3 install mamba_ssm
 # Submit your job to the cluster
 srun --gres=gpu:1 python run.py
