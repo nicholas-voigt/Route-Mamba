@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from model import EmbeddingNet, MambaBlock, ValueDecoder
+from nets.model import EmbeddingNet, MambaBlock, ValueDecoder
 
 
 class Actor(nn.Module):
