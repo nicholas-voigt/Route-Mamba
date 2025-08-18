@@ -31,7 +31,7 @@ def get_options(args=None):
     
     # Inference and validation parameters
     parser.add_argument('--eval_only', action='store_true', help='switch to inference mode')
-    parser.add_argument('--val_size', type=int, default=1000, help='number of instances for validation/inference')
+    parser.add_argument('--eval_size', type=int, default=1000, help='number of instances for validation/inference')
     parser.add_argument('--val_dataset', type=str, default = './datasets/tsp_20_10000.pkl', help='dataset file path')
 
     # resume and load models

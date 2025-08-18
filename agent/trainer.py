@@ -50,7 +50,7 @@ class SurrogateLoss:
         """
         torch.manual_seed(self.opts.seed)
 
-        for epoch in range(self.opts.K_epochs):
+        for epoch in range(self.opts.n_epochs):
             # prepare training data
             training_dataset = problem.make_dataset(
                 size=self.opts.graph_size,
@@ -88,7 +88,7 @@ class SurrogateLoss:
                 total_loss += loss.item() * batch['coordinates'].size(0)
 
             avg_loss = total_loss / len(training_dataloader.dataset) # type: ignore
-            print(f"Epoch {epoch+1}/{self.opts.K_epochs} | Avg Loss: {avg_loss:.4f}")
+            print(f"Epoch {epoch+1}/{self.opts.n_epochs} | Avg Loss: {avg_loss:.4f}")
             
             # Save model checkpoint
             self.save(epoch)
