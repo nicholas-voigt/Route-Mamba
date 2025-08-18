@@ -57,8 +57,10 @@ def get_options(args=None):
         if not opts.resume else opts.resume.split('/')[-2]
     opts.save_dir = os.path.join(
         opts.output_dir,
-        "{}_{}".format(opts.problem, opts.graph_size),
+        # "{}_{}".format(opts.problem, opts.graph_size),
         opts.run_name
     ) if not opts.no_save else None
+    if opts.save_dir and not os.path.exists(opts.save_dir):
+        os.makedirs(opts.save_dir)
 
     return opts

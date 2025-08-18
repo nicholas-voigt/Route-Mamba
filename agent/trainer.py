@@ -26,14 +26,14 @@ class SurrogateLoss:
             lr = opts.lr_model
         )
 
-    def save(self, epoch, dir="models", path_prefix="checkpoint"):
+    def save(self, epoch, save_dir, path_prefix="checkpoint"):
         """
         Saves the actor model's state_dict after each epoch.
         Args:
             epoch: Current epoch number (int)
             path_prefix: Prefix for the checkpoint file (default: "checkpoint")
         """
-        save_path = os.path.join(dir, f"{path_prefix}_epoch{epoch+1}.pt")
+        save_path = os.path.join(save_dir, f"{path_prefix}_{self.opts.run_name}_epoch{epoch+1}.pt")
         torch.save({
             'epoch': epoch + 1,
             'model_state_dict': self.actor.state_dict(),
@@ -91,7 +91,7 @@ class SurrogateLoss:
             print(f"Epoch {epoch+1}/{self.opts.n_epochs} | Avg Loss: {avg_loss:.4f}")
             
             # Save model checkpoint
-            self.save(epoch)
+            self.save(epoch=epoch, save_dir=self.opts.save_dir)
 
     def evaluate(self, problem: TSP):
         """
