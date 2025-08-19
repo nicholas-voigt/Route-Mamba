@@ -12,31 +12,35 @@ class EmbeddingNet(nn.Module):
     """
     def __init__(self, node_dim, embedding_dim, seq_length, device, alpha, dense_emb):
         super(EmbeddingNet, self).__init__()
-        self.node_dim = node_dim  # Dimension of the initial node features
+        self.node_dim = node_dim            # Dimension of the initial node features
         self.embedding_dim = embedding_dim  # Dimension of the embedding space
+        self.alpha = alpha                  # Scaling factor for frequency base
+        self.dense_emb = dense_emb          # Density of cyclic encoding
+        self.seq_length = seq_length        # Length of the sequence (tour length)
+        self.device = device                # Device for computation
+
         self.node_feature_encoder = nn.Linear(node_dim, embedding_dim, bias=False)  # Linear layer for node feature embedding
         self.cyclic_encoder = self.cyclic_encoding(seq_length, embedding_dim, alpha, dense_emb)
-        self.device = device
 
     def init_parameters(self):
         for param in self.parameters():
             stdv = 1. / math.sqrt(param.size(-1))
             param.data.uniform_(-stdv, stdv)
 
-    def cyclic_encoding(self, N: int, emb_dim: int, alpha: float, dense_emb: bool):
+    def cyclic_encoding(self, N: int, d: int, alpha: float, dense_emb: bool):
         """
-        Cyclic embedding with harmonic basis + RoPE twist for relative cyclic distances.
+        Cyclic embedding which incorporates relative positional information.
         Args:
             N: Number of positions (tour length)
-            emb_dim: Dimension of the embedding space (has to be even)
+            d: Dimension of the embedding space (has to be even)
             alpha: scaling factor for frequency base (theta = alpha * N)
             dense_emb: density of encoding, False means d/2 sin/cos pairs (standard RoPE), True means d sin/cos pairs (better granularity but heavier)
         Returns:
-            embedding: A tensor of shape (N, emb_dim) containing the cyclic encodings.
+            embedding: A tensor of shape (N, d) containing the cyclic encodings.
         """
-        assert emb_dim % 2 == 0, "Embedding dimension must be even."
+        assert d % 2 == 0, "Embedding dimension must be even."
         theta = alpha * N  # scaling factor for frequency base
-        K = emb_dim // 2
+        K = d // 2
         # tour phases: positions 0...N-1
         t = torch.arange(N, device=self.device, dtype=torch.float32)
         # Generate frequency spectrum
@@ -49,7 +53,7 @@ class EmbeddingNet(nn.Module):
         emb_sin = torch.sin(angles)
         emb_cos = torch.cos(angles)
         # Initialize embedding tensor and interleave sin and cos across dimensions
-        emb = torch.zeros((N, emb_dim), device=self.device, dtype=torch.float32)
+        emb = torch.zeros((N, d), device=self.device, dtype=torch.float32)
         emb[:, 0::2] = emb_sin
         emb[:, 1::2] = emb_cos
         # Normalize for stability

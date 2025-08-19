@@ -16,6 +16,8 @@ def get_options(args=None):
     # Route-Mamba parameters
     parser.add_argument('--problem_input_dim', type=int, default=2, help='input dimension of the problem nodes')
     parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of input embeddings for each, NFE & CE, has to be even')
+    parser.add_argument('--frequency_base', type=int, default=10, help='Factor to couple theta to the sequence length N (between 1 and 10)')
+    parser.add_argument('--dense_cyclic_emb', action='store_true', help='Switch to dense cyclic embeddings instead of standard RoPE')
     parser.add_argument('--model_dim', type=int, default=64, help='dimension of the mamba model (default equal to 2 * embedding_dim)')
     parser.add_argument('--hidden_dim', type=int, default=128, help='dimension of hidden state representation in Mamba')
     parser.add_argument('--score_dim', type=int, default=4, help='dimension of output score vector')

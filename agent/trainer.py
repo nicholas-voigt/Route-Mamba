@@ -12,14 +12,17 @@ class SurrogateLoss:
     def __init__(self, size, opts):
         self.opts = opts
         self.actor = Actor(
-            input_dim=opts.problem_input_dim,
-            embedding_dim=opts.embedding_dim,
-            model_dim=opts.model_dim,
-            hidden_dim=opts.hidden_dim,
-            score_dim=opts.score_dim,
-            gs_tau=opts.gs_tau,
-            gs_iters=opts.gs_iters,
-            seq_length=size
+            input_dim = opts.problem_input_dim,
+            embedding_dim = opts.embedding_dim,
+            frequency_base = opts.frequency_base,
+            dense_cyclic_emb = opts.dense_cyclic_emb,
+            model_dim = opts.model_dim,
+            hidden_dim = opts.hidden_dim,
+            score_dim = opts.score_dim,
+            gs_tau = opts.gs_tau,
+            gs_iters = opts.gs_iters,
+            seq_length = size,
+            device = opts.device
         ).to(opts.device)
         self.optimizer = torch.optim.Adam(
             params = self.actor.parameters(),

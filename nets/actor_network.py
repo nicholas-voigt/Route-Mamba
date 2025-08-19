@@ -5,38 +5,28 @@ from nets.model import EmbeddingNet, MambaBlock, ValueDecoder
 
 
 class Actor(nn.Module):
-    def __init__(self, input_dim, embedding_dim, model_dim, hidden_dim, score_dim, gs_tau, gs_iters, seq_length):
+    def __init__(self, input_dim, embedding_dim, frequency_base, dense_cyclic_emb, 
+                 model_dim, hidden_dim, score_dim, gs_tau, gs_iters, seq_length, device):
         super().__init__()
 
-        self.input_dim = input_dim          # Node input dimensions (usually 2 for (x, y) coordinates)
-        self.embedding_dim = embedding_dim  # Embedding dimensions for node features and cyclic positional encodings (has to be even)
-        self.seq_length = seq_length        # Sequence length (number of nodes in the graph)
-
-        self.model_dim = model_dim          # Model dimensions for the MambaBlock
-        self.hidden_dim = hidden_dim        # Hidden state dimensions for the MambaBlock
-        self.score_dim = score_dim          # Score dimensions for the output vector
-
-        self.gs_tau = gs_tau                # Gumbel-Sinkhorn temperature
-        self.gs_iters = gs_iters            # Number of Sinkhorn iterations
-
-        # Define model
         self.encoder = EmbeddingNet(
-            self.input_dim,
-            self.embedding_dim,
-            self.seq_length
+            node_dim = input_dim,
+            embedding_dim = embedding_dim,
+            seq_length = seq_length,
+            device = device,
+            alpha = frequency_base,
+            dense_emb = dense_cyclic_emb
         )
-
         self.model = MambaBlock(
-            self.embedding_dim * 2,
-            self.model_dim,
-            self.hidden_dim,
-            self.score_dim
+            input_dim = embedding_dim * 2,
+            mamba_dim = model_dim,
+            hidden_dim = hidden_dim,
+            score_dim = score_dim
         )
-
         self.decoder = ValueDecoder(
-            self.score_dim,
-            self.gs_tau,
-            self.gs_iters
+            score_dim = score_dim,
+            gs_tau = gs_tau,
+            gs_iters = gs_iters
         )
 
     def forward(self, batch):
