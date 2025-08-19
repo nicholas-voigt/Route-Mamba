@@ -5,7 +5,7 @@ from nets.model import EmbeddingNet, MambaBlock, ValueDecoder
 
 
 class Actor(nn.Module):
-    def __init__(self, input_dim, embedding_dim, frequency_base, dense_cyclic_emb, 
+    def __init__(self, input_dim, embedding_dim, frequency_base, freq_spread, 
                  model_dim, hidden_dim, score_dim, gs_tau, gs_iters, seq_length, device):
         super().__init__()
 
@@ -15,7 +15,7 @@ class Actor(nn.Module):
             seq_length = seq_length,
             device = device,
             alpha = frequency_base,
-            dense_emb = dense_cyclic_emb
+            freq_spread = freq_spread
         )
         self.model = MambaBlock(
             input_dim = embedding_dim * 2,

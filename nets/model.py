@@ -10,45 +10,43 @@ class EmbeddingNet(nn.Module):
     Embedding Network for node features.
     Performs node feature embedding and cyclic positional encoding.
     """
-    def __init__(self, node_dim, embedding_dim, seq_length, device, alpha, dense_emb):
+    def __init__(self, node_dim, embedding_dim, seq_length, device, alpha, freq_spread):
         super(EmbeddingNet, self).__init__()
         self.node_dim = node_dim            # Dimension of the initial node features
         self.embedding_dim = embedding_dim  # Dimension of the embedding space
         self.alpha = alpha                  # Scaling factor for frequency base
-        self.dense_emb = dense_emb          # Density of cyclic encoding
+        self.freq_spread = freq_spread      # Density of cyclic encoding
         self.seq_length = seq_length        # Length of the sequence (tour length)
         self.device = device                # Device for computation
 
         self.node_feature_encoder = nn.Linear(node_dim, embedding_dim, bias=False)  # Linear layer for node feature embedding
-        self.cyclic_encoder = self.cyclic_encoding(seq_length, embedding_dim, alpha, dense_emb)
+        self.cyclic_encoder = self.cyclic_encoding(seq_length, embedding_dim, alpha, freq_spread)
 
     def init_parameters(self):
         for param in self.parameters():
             stdv = 1. / math.sqrt(param.size(-1))
             param.data.uniform_(-stdv, stdv)
 
-    def cyclic_encoding(self, N: int, d: int, alpha: float, dense_emb: bool):
+    def cyclic_encoding(self, N: int, d: int, alpha: float, spread: float):
         """
         Cyclic embedding which incorporates relative positional information.
         Args:
             N: Number of positions (tour length)
             d: Dimension of the embedding space (has to be even)
             alpha: scaling factor for frequency base (theta = alpha * N)
-            dense_emb: density of encoding, False means d/2 sin/cos pairs (standard RoPE), True means d sin/cos pairs (better granularity but heavier)
+            spread: frequency bandwith, between 1.0 (dense encoding) and 2.0 (standard RoPE)
         Returns:
             embedding: A tensor of shape (N, d) containing the cyclic encodings.
         """
         assert d % 2 == 0, "Embedding dimension must be even."
+        assert 1.0 <= spread <= 2.0, "spread must be between 1.0 and 2.0"
         theta = alpha * N  # scaling factor for frequency base
         K = d // 2
         # tour phases: positions 0...N-1
         t = torch.arange(N, device=self.device, dtype=torch.float32)
         # Generate frequency spectrum
-        if dense_emb:
-            freqs = 1.0 / (theta ** (torch.arange(start=0, end=K, step=1, device=self.device, dtype=torch.float32) / K))
-        else:
-            freqs = 1.0 / (theta ** (torch.arange(start=0, end=K, step=2, device=self.device, dtype=torch.float32) / K))
-        # angles = phase * frequencies (shape is either (N, K) or (N, K//2))
+        freqs = 1.0 / (theta ** (torch.arange(0, K, 1, device=self.device, dtype=torch.float32) / K * spread))
+        # angles = phase * frequencies (N, K)
         angles = t[:, None] * freqs
         emb_sin = torch.sin(angles)
         emb_cos = torch.cos(angles)

@@ -15,7 +15,7 @@ class SurrogateLoss:
             input_dim = opts.problem_input_dim,
             embedding_dim = opts.embedding_dim,
             frequency_base = opts.frequency_base,
-            dense_cyclic_emb = opts.dense_cyclic_emb,
+            freq_spread = opts.freq_spread,
             model_dim = opts.model_dim,
             hidden_dim = opts.hidden_dim,
             score_dim = opts.score_dim,
