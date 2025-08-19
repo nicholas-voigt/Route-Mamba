@@ -19,6 +19,7 @@
                                     # You must provide an absolute path eg /common/home/module/username/
                                     # If no paths are provided, the output file will be placed in your current working directory
 #SBATCH --requeue                   # Remove if you do not want the workload scheduler to requeue your job after preemption
+#SBATCH --constraint=skylake        # Constrain to skylake nodes
 
 ################################################################
 ## EDIT AFTER THIS LINE IF YOU ARE OKAY WITH DEFAULT SETTINGS ##
@@ -51,10 +52,10 @@ source ~/Capstone/bin/activate
 srun whichgpu
 
 # If you require any packages, install it as usual before the srun job submission.
-pip3 install numpy
-pip3 install scipy
-pip3 install torch torchvision torchaudio
-pip3 install mamba_ssm
+pip3 install -q numpy
+pip3 install -q scipy
+pip3 install -q torch torchvision torchaudio
+pip3 install -q mamba_ssm
 
 # Submit your job to the cluster
 srun --gres=gpu:1 python run.py
