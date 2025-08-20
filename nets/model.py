@@ -10,54 +10,53 @@ class EmbeddingNet(nn.Module):
     Embedding Network for node features.
     Performs node feature embedding and cyclic positional encoding.
     """
-    def __init__(self, node_dim, embedding_dim, seq_length):
+    def __init__(self, node_dim, embedding_dim, seq_length, device, alpha, freq_spread):
         super(EmbeddingNet, self).__init__()
-        self.node_dim = node_dim  # Dimension of the initial node features
+        self.node_dim = node_dim            # Dimension of the initial node features
         self.embedding_dim = embedding_dim  # Dimension of the embedding space
-        self.embedder = nn.Linear(node_dim, embedding_dim, bias=False)  # Linear layer for node feature embedding
-        self.pattern = self.cyclic_encoding(seq_length, embedding_dim)  # Cyclic encoding
+        self.alpha = alpha                  # Scaling factor for frequency base
+        self.freq_spread = freq_spread      # Density of cyclic encoding
+        self.seq_length = seq_length        # Length of the sequence (tour length)
+        self.device = device                # Device for computation
+
+        self.node_feature_encoder = nn.Linear(node_dim, embedding_dim, bias=False)  # Linear layer for node feature embedding
+        self.cyclic_encoder = self.cyclic_encoding(seq_length, embedding_dim, alpha, freq_spread)
 
     def init_parameters(self):
         for param in self.parameters():
             stdv = 1. / math.sqrt(param.size(-1))
             param.data.uniform_(-stdv, stdv)
 
-    def basesin(self, x, T, fai=0):
-        return np.sin(2 * np.pi / T * np.abs(np.mod(x, 2 * T) - T) + fai)
-
-    def basecos(self, x, T, fai=0):
-        return np.cos(2 * np.pi / T * np.abs(np.mod(x, 2 * T) - T) + fai)
-
-    def cyclic_encoding(self, n_position, emb_dim, mean_pooling=True):
+    def cyclic_encoding(self, N: int, d: int, alpha: float, spread: float):
         """
+        Cyclic embedding which incorporates relative positional information.
         Args:
-            n_position: Number of positions (sequence length)
-            emb_dim: Dimension of the embedding space
-            mean_pooling: Whether to use mean pooling
+            N: Number of positions (tour length)
+            d: Dimension of the embedding space (has to be even)
+            alpha: scaling factor for frequency base (theta = alpha * N)
+            spread: frequency bandwith, between 1.0 (dense encoding) and 2.0 (standard RoPE)
         Returns:
-            A tensor of shape (n_position, emb_dim) containing the cyclic encodings.
+            embedding: A tensor of shape (N, d) containing the cyclic encodings.
         """
-        Td_set = np.linspace(np.power(n_position, 1 / (emb_dim // 2)), n_position, emb_dim // 2, dtype='int')
-        x = np.zeros((n_position, emb_dim))
-        for i in range(emb_dim):
-            Td = Td_set[i // 3 * 3 + 1] if (i // 3 * 3 + 1) < (emb_dim // 2) else Td_set[-1]
-            fai = 0 if i <= (emb_dim // 2) else 2 * np.pi * ((-i + (emb_dim // 2)) / (emb_dim // 2))
-            longer_pattern = np.arange(0, np.ceil((n_position) / Td) * Td, 0.01)
-            if i % 2 == 1:
-                x[:, i] = self.basecos(longer_pattern, Td, fai)[np.linspace(0, len(longer_pattern), n_position, dtype='int', endpoint=False)]
-            else:
-                x[:, i] = self.basesin(longer_pattern, Td, fai)[np.linspace(0, len(longer_pattern), n_position, dtype='int', endpoint=False)]
-        pattern = torch.from_numpy(x).to(torch.float32)
-        pattern_sum = torch.zeros_like(pattern)
-        arange = torch.arange(n_position)
-        pooling = [0] if not mean_pooling else [-2, -1, 0, 1, 2]
-        time = 0
-        for i in pooling:
-            time += 1
-            index = (arange + i + n_position) % n_position
-            pattern_sum += pattern.gather(0, index.view(-1, 1).expand_as(pattern))
-        pattern = 1. / time * pattern_sum - pattern.mean(0)
-        return pattern
+        assert d % 2 == 0, "Embedding dimension must be even."
+        assert 1.0 <= spread <= 2.0, "spread must be between 1.0 and 2.0"
+        theta = alpha * N  # scaling factor for frequency base
+        K = d // 2
+        # tour phases: positions 0...N-1
+        t = torch.arange(N, device=self.device, dtype=torch.float32)
+        # Generate frequency spectrum
+        freqs = 1.0 / (theta ** (torch.arange(0, K, 1, device=self.device, dtype=torch.float32) / K * spread))
+        # angles = phase * frequencies (N, K)
+        angles = t[:, None] * freqs
+        emb_sin = torch.sin(angles)
+        emb_cos = torch.cos(angles)
+        # Initialize embedding tensor and interleave sin and cos across dimensions
+        emb = torch.zeros((N, d), device=self.device, dtype=torch.float32)
+        emb[:, 0::2] = emb_sin
+        emb[:, 1::2] = emb_cos
+        # Normalize for stability
+        emb = emb - emb.mean(dim=0, keepdim=True)
+        return emb
 
     def forward(self, x):
         """
@@ -66,11 +65,15 @@ class EmbeddingNet(nn.Module):
         Returns:
             feats: (batch, N, embedding_dim * 2) - concatenated node and cyclic embeddings
         """
-        NFEs = self.embedder(x)  # (batch, N, embedding_dim)
+        # Normalize node features to [0, 1] per instance
+        x_min = x.min(dim=1, keepdim=True)[0]
+        x_max = x.max(dim=1, keepdim=True)[0]
+        x_norm = (x - x_min) / (x_max - x_min + 1e-8)  # (batch, N, node_dim)
+        # Apply node feature encoder & cyclic encoder
+        NFEs = self.node_feature_encoder(x_norm)  # (batch, N, embedding_dim)
         batch_size, N, _ = x.shape
-        # Expand cyclic pattern for batch
-        cyclic_emb = self.pattern.unsqueeze(0).expand(batch_size, -1, -1).to(x.device)  # (batch, N, embedding_dim)
-        feats = torch.cat([NFEs, cyclic_emb], dim=-1)  # (batch, N, embedding_dim * 2)
+        CEs = self.cyclic_encoder.unsqueeze(0).expand(batch_size, -1, -1).to(x.device)  # (batch, N, embedding_dim)
+        feats = torch.cat([NFEs, CEs], dim=-1)  # (batch, N, embedding_dim * 2)
         return feats
 
 
