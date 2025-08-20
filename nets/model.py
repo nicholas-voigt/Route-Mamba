@@ -65,9 +65,13 @@ class EmbeddingNet(nn.Module):
         Returns:
             feats: (batch, N, embedding_dim * 2) - concatenated node and cyclic embeddings
         """
-        NFEs = self.node_feature_encoder(x)  # (batch, N, embedding_dim)
+        # Normalize node features to [0, 1] per instance
+        x_min = x.min(dim=1, keepdim=True)[0]
+        x_max = x.max(dim=1, keepdim=True)[0]
+        x_norm = (x - x_min) / (x_max - x_min + 1e-8)  # (batch, N, node_dim)
+        # Apply node feature encoder & cyclic encoder
+        NFEs = self.node_feature_encoder(x_norm)  # (batch, N, embedding_dim)
         batch_size, N, _ = x.shape
-        # Expand cyclic pattern for batch
         CEs = self.cyclic_encoder.unsqueeze(0).expand(batch_size, -1, -1).to(x.device)  # (batch, N, embedding_dim)
         feats = torch.cat([NFEs, CEs], dim=-1)  # (batch, N, embedding_dim * 2)
         return feats
