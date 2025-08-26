@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import math
 import numpy as np
 from mamba_ssm import Mamba
@@ -10,52 +11,36 @@ class EmbeddingNet(nn.Module):
     Embedding Network for node features.
     Performs node feature embedding and cyclic positional encoding.
     """
-    def __init__(self, node_dim, embedding_dim, seq_length, device, alpha, freq_spread):
-        super(EmbeddingNet, self).__init__()
+    def __init__(self, node_dim: int, embedding_dim: int, k: int, device: torch.device, alpha: float):
+        super().__init__()
+        self.node_feature_encoder = nn.Linear(node_dim, embedding_dim, bias=False)  # Linear layer for node feature embedding
+        self.cyclic_projection = nn.Linear(2 * k, embedding_dim, bias=False)  # Linear layer to project harmonics to embedding_dim
+
         self.node_dim = node_dim            # Dimension of the initial node features
         self.embedding_dim = embedding_dim  # Dimension of the embedding space
+        self.k = k                          # Number of harmonics
         self.alpha = alpha                  # Scaling factor for frequency base
-        self.freq_spread = freq_spread      # Density of cyclic encoding
-        self.seq_length = seq_length        # Length of the sequence (tour length)
         self.device = device                # Device for computation
 
-        self.node_feature_encoder = nn.Linear(node_dim, embedding_dim, bias=False)  # Linear layer for node feature embedding
-        self.cyclic_encoder = self.cyclic_encoding(seq_length, embedding_dim, alpha, freq_spread)
-
-    def init_parameters(self):
-        for param in self.parameters():
-            stdv = 1. / math.sqrt(param.size(-1))
-            param.data.uniform_(-stdv, stdv)
-
-    def cyclic_encoding(self, N: int, d: int, alpha: float, spread: float):
+    def cyclic_encoding(self, N: int):
         """
         Cyclic embedding which incorporates relative positional information.
         Args:
             N: Number of positions (tour length)
-            d: Dimension of the embedding space (has to be even)
-            alpha: scaling factor for frequency base (theta = alpha * N)
-            spread: frequency bandwith, between 1.0 (dense encoding) and 2.0 (standard RoPE)
         Returns:
-            embedding: A tensor of shape (N, d) containing the cyclic encodings.
+            node feature embedding: A tensor of shape (batch, N, embedding_dim)
+            cyclic embedding: A tensor of shape (batch, N, embedding_dim)
         """
-        assert d % 2 == 0, "Embedding dimension must be even."
-        assert 1.0 <= spread <= 2.0, "spread must be between 1.0 and 2.0"
-        theta = alpha * N  # scaling factor for frequency base
-        K = d // 2
-        # tour phases: positions 0...N-1
+        # tour phases: positions 0...N-1 [N]
         t = torch.arange(N, device=self.device, dtype=torch.float32)
-        # Generate frequency spectrum
-        freqs = 1.0 / (theta ** (torch.arange(0, K, 1, device=self.device, dtype=torch.float32) / K * spread))
-        # angles = phase * frequencies (N, K)
-        angles = t[:, None] * freqs
-        emb_sin = torch.sin(angles)
-        emb_cos = torch.cos(angles)
-        # Initialize embedding tensor and interleave sin and cos across dimensions
-        emb = torch.zeros((N, d), device=self.device, dtype=torch.float32)
-        emb[:, 0::2] = emb_sin
-        emb[:, 1::2] = emb_cos
-        # Normalize for stability
-        emb = emb - emb.mean(dim=0, keepdim=True)
+        # integer harmonics for exact periodicity [k]
+        h = torch.arange(1, self.k + 1, device=self.device, dtype=torch.float32)
+        # map angles on radian
+        angles = 2 * math.pi * (t[:, None] * h[None, :] / N)  # [N, k]
+        # interleave sin/cos & decay amplitudes for higher frequencies
+        emb = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1).reshape(N, 2 * self.k)  # [N, k, 2] -> [N, 2k]
+        a = h.pow(-self.alpha)
+        emb = emb * a.repeat_interleave(2).unsqueeze(0)  # [N, 2k]
         return emb
 
     def forward(self, x):
@@ -65,16 +50,16 @@ class EmbeddingNet(nn.Module):
         Returns:
             feats: (batch, N, embedding_dim * 2) - concatenated node and cyclic embeddings
         """
-        # Normalize node features to [0, 1] per instance
-        x_min = x.min(dim=1, keepdim=True)[0]
-        x_max = x.max(dim=1, keepdim=True)[0]
-        x_norm = (x - x_min) / (x_max - x_min + 1e-8)  # (batch, N, node_dim)
-        # Apply node feature encoder & cyclic encoder
-        NFEs = self.node_feature_encoder(x_norm)  # (batch, N, embedding_dim)
-        batch_size, N, _ = x.shape
-        CEs = self.cyclic_encoder.unsqueeze(0).expand(batch_size, -1, -1).to(x.device)  # (batch, N, embedding_dim)
-        feats = torch.cat([NFEs, CEs], dim=-1)  # (batch, N, embedding_dim * 2)
-        return feats
+        # Node Feature Embedding
+        x_norm = F.layer_norm(x, (x.shape[-1],))  # [B, N, node_dim]
+        nfe = self.node_feature_encoder(x_norm)  # [B, N, embedding_dim]
+
+        # Cyclic Embedding
+        B, N, _ = x.shape
+        ce = self.cyclic_encoding(N).unsqueeze(0).repeat(B, 1, 1)  # [B, N, 2k]
+        ce = self.cyclic_projection(ce)  # [B, N, embedding_dim]
+
+        return nfe, ce
 
 
 class MambaBlock(nn.Module):
