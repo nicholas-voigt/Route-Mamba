@@ -11,7 +11,7 @@ class EmbeddingNet(nn.Module):
     Embedding Network for node features.
     Performs node feature embedding and cyclic positional encoding.
     """
-    def __init__(self, node_dim: int, embedding_dim: int, k: int, seq_length: int, device: torch.device, alpha: float, freq_spread: float):
+    def __init__(self, node_dim: int, embedding_dim: int, k: int, device: torch.device, alpha: float):
         super().__init__()
         self.node_feature_encoder = nn.Linear(node_dim, embedding_dim, bias=False)  # Linear layer for node feature embedding
         self.cyclic_projection = nn.Linear(2 * k, embedding_dim, bias=False)  # Linear layer to project harmonics to embedding_dim

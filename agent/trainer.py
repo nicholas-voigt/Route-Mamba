@@ -9,19 +9,18 @@ from utils import greedy_initial_tour, check_feasibility, compute_soft_tour_leng
 
 
 class SurrogateLoss:
-    def __init__(self, size, opts):
+    def __init__(self, opts):
         self.opts = opts
         self.actor = Actor(
             input_dim = opts.problem_input_dim,
             embedding_dim = opts.embedding_dim,
-            frequency_base = opts.frequency_base,
-            freq_spread = opts.freq_spread,
+            harmonics = opts.harmonics,
+            frequency_scaling = opts.frequency_scaling,
             model_dim = opts.model_dim,
             hidden_dim = opts.hidden_dim,
             score_dim = opts.score_dim,
             gs_tau = opts.gs_tau,
             gs_iters = opts.gs_iters,
-            seq_length = size,
             device = opts.device
         ).to(opts.device)
         self.optimizer = torch.optim.Adam(

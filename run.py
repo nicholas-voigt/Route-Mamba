@@ -41,7 +41,7 @@ def run(opts):
     problem = load_problem(opts.problem)(size=opts.graph_size)
 
     # Figure out the RL algorithm
-    agent = load_agent(opts.RL_agent)(problem.size,  opts)
+    agent = load_agent(opts.RL_agent)(opts)
 
     # Load model checkpoint if specified
     if opts.load_path is not None:

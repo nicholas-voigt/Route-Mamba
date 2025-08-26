@@ -5,17 +5,15 @@ from nets.model import EmbeddingNet, MambaBlock, ValueDecoder
 
 
 class Actor(nn.Module):
-    def __init__(self, input_dim, embedding_dim, frequency_base, freq_spread, 
-                 model_dim, hidden_dim, score_dim, gs_tau, gs_iters, seq_length, device):
+    def __init__(self, input_dim, embedding_dim, harmonics, frequency_scaling, model_dim, hidden_dim, score_dim, gs_tau, gs_iters, device):
         super().__init__()
 
         self.encoder = EmbeddingNet(
             node_dim = input_dim,
             embedding_dim = embedding_dim,
-            seq_length = seq_length,
+            k = harmonics,
             device = device,
-            alpha = frequency_base,
-            freq_spread = freq_spread
+            alpha = frequency_scaling
         )
         self.model = MambaBlock(
             input_dim = embedding_dim * 2,
