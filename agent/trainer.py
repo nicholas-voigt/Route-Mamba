@@ -18,6 +18,7 @@ class SurrogateLoss:
             frequency_scaling = opts.frequency_scaling,
             model_dim = opts.model_dim,
             hidden_dim = opts.hidden_dim,
+            mamba_layers = opts.mamba_layers,
             gs_tau = opts.gs_tau,
             gs_iters = opts.gs_iters,
             device = opts.device

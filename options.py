@@ -20,6 +20,7 @@ def get_options(args=None):
     parser.add_argument('--frequency_scaling', type=float, default=0.0, help='How the amplitude should decay for harmonics with larger frequencies (between 0 and 1)')
     parser.add_argument('--model_dim', type=int, default=64, help='dimension of the mamba model (default equal to 2 * embedding_dim)')
     parser.add_argument('--hidden_dim', type=int, default=128, help='dimension of hidden state representation in Mamba')
+    parser.add_argument('--mamba_layers', type=int, default=3, help='number of stacked Mamba blocks in the model')
     parser.add_argument('--score_dim', type=int, default=4, help='dimension of output score vector')
     parser.add_argument('--gs_tau', type=float, default=1.0, help='Gumbel-Sinkhorn temperature')
     parser.add_argument('--gs_iters', type=int, default=20, help='Number of Sinkhorn iterations')
