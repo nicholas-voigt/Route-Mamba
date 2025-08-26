@@ -105,18 +105,59 @@ class MambaBlock(nn.Module):
         return x    # [B, N, mamba_dim]
 
 
-class ValueDecoder(nn.Module):
+class BilinearScoreHead(nn.Module):
     """
-    Value Decoder for the Mamba model.
-    Takes output feature vectors from Mamba and performs gumbel sinkhorn sorting to generate a new tour.
+    Takes Mamba and cyclic features as input and builds a score matrix S for gumbel-sinkhorn soft permutation.
+    Build S in [B x N x N] from:
+      E = mamba_features in [B x N x model_dim]
+      R = cyclic_feats    in [B x N x embedding_dim]
+      W = bilinear_weights in [d_head x d_head]
+    via S = (E U_e) W (R U_r)^T
     """
-    def __init__(self, feature_dim, gs_tau, gs_iters):
-        super(ValueDecoder, self).__init__()
-        self.feature_dim = feature_dim
+    def __init__(self, model_dim: int, embedding_dim: int, d_head: int = 128, bias: bool = True):
+        super().__init__()
+        self.proj_e = nn.Linear(model_dim,    d_head, bias=False)  # U_e
+        self.proj_r = nn.Linear(embedding_dim, d_head, bias=False) # U_r
+        self.W      = nn.Parameter(torch.empty(d_head, d_head))    # bilinear core
+        nn.init.xavier_uniform_(self.W)
+
+        if bias:
+            self.node_bias = nn.Parameter(torch.zeros(1, 1, 1))   # optional global scalar
+            self.pos_bias  = nn.Parameter(torch.zeros(1, 1, 1))
+        else:
+            self.register_parameter("node_bias", None)
+            self.register_parameter("pos_bias", None)
+
+    def forward(self, mamba_features: torch.Tensor, cyclic_feats: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            mamba_features: [B, N, model_dim]
+            cyclic_feats:   [B, N, embedding_dim]
+        Returns:
+            S: [B, N, N] (rows = nodes i, cols = positions j)
+        """
+        E = self.proj_e(mamba_features)          # [B, N, d_head]
+        R = self.proj_r(cyclic_feats)            # [B, N, d_head]
+
+        # Apply bilinear core: (E @ W) @ R^T
+        Ew = E @ self.W                          # [B, N, d_head]
+        S  = torch.matmul(Ew, R.transpose(1, 2)) # [B, N, N]
+
+        if self.node_bias is not None:
+            S = S + self.node_bias + self.pos_bias
+        return S
+
+
+class GumbelSinkhornDecoder(nn.Module):
+    """
+    Takes score matrix [B, N, N] as input,
+    introduces Gumbel noise via sampling and scales scores according to temperature gs_tau,
+    performs Sinkhorn normalization for gs_iters iterations (larger -> closer to true permutation) to get a doubly stochastic matrix.
+    """
+    def __init__(self, gs_tau, gs_iters):
+        super().__init__()
         self.gs_tau = gs_tau
         self.gs_iters = gs_iters
-
-        self.score_proj = nn.Linear(self.feature_dim, 1)
 
     # ---- Gumbel noise sampling ----
     def sample_gumbel(self, shape, eps=1e-20, device=None):
@@ -124,39 +165,22 @@ class ValueDecoder(nn.Module):
         return -torch.log(-torch.log(U + eps) + eps)
 
     # ---- Sinkhorn normalization ----
-    def sinkhorn(self, log_alpha):
+    def sinkhorn(self, scores: torch.Tensor) -> torch.Tensor:
         for _ in range(self.gs_iters):
-            log_alpha = log_alpha - torch.logsumexp(log_alpha, dim=2, keepdim=True)  # row norm
-            log_alpha = log_alpha - torch.logsumexp(log_alpha, dim=1, keepdim=True)  # col norm
-        return torch.exp(log_alpha)
+            scores = scores - torch.logsumexp(scores, dim=2, keepdim=True)  # row norm
+            scores = scores - torch.logsumexp(scores, dim=1, keepdim=True)  # col norm
+        return torch.exp(scores)
 
-    # ---- Gumbel-Sinkhorn operator ----
-    def gumbel_sinkhorn(self, scores):
+    def forward(self, scores: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            scores: (batch, N)
+            score matrix [B, N, N] - should be in logit space (unbounded)
         Returns:
-            (batch, N, N) permutation matrix
+            soft permutation matrix [B, N, N]
         """
-        _, N = scores.shape
-        # Expand scores to NxN matrix by repeating across columns
-        log_alpha = scores.unsqueeze(2).expand(-1, -1, N)  # (batch, N, N)
         # Add Gumbel noise
-        gumbel_noise = self.sample_gumbel(log_alpha.shape, device=scores.device)
-        log_alpha = (log_alpha + gumbel_noise) / self.gs_tau
+        gumbel_noise = self.sample_gumbel(scores.shape, device=scores.device)
+        scores = (scores + gumbel_noise) / self.gs_tau
         # Sinkhorn normalization to get doubly stochastic matrix
-        P_hat = self.sinkhorn(log_alpha)
-        return P_hat  # (batch, N, N)
-
-    def forward(self, scores):
-        """
-        Args:
-            scores: (batch, N, score_dim) - scores from Mamba model
-        Returns:
-            P_hat: (batch, N, N) - soft permutation matrix
-        """
-        # Project multidimensional scores to scalar per node
-        scalar_scores = self.score_proj(scores).squeeze(-1)  # (batch, N)
-        # Apply Gumbel-Sinkhorn
-        P_hat = self.gumbel_sinkhorn(scalar_scores)
-        return P_hat
+        perm = self.sinkhorn(scores)
+        return perm

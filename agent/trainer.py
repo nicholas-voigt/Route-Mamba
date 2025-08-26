@@ -19,6 +19,8 @@ class SurrogateLoss:
             model_dim = opts.model_dim,
             hidden_dim = opts.hidden_dim,
             mamba_layers = opts.mamba_layers,
+            score_head_dim = opts.score_head_dim,
+            score_head_bias = opts.score_head_bias,
             gs_tau = opts.gs_tau,
             gs_iters = opts.gs_iters,
             device = opts.device
