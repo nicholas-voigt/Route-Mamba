@@ -67,57 +67,56 @@ class MambaBlock(nn.Module):
     Mamba Block for the TSP model.
     Takes concatenated node and cyclic embeddings as input and outputs a score for each node.
     """
-    def __init__(self, input_dim, mamba_dim, hidden_dim, score_dim):
+    def __init__(self, input_dim, mamba_dim, hidden_dim, layers):
         """
         Args:
             input_dim: Dimension of concatenated embedding (node + cyclic)
             mamba_dim: Model dimension for Mamba (d_model)
             hidden_dim: SSM state expansion factor (d_state)
-            score_dim: Dimension of the output score vector
+            layers: Number of Mamba blocks stacked (min: 1)
         """
         super(MambaBlock, self).__init__()
         self.embedding_dim = input_dim  # Dimension of the input embeddings
         self.mamba_dim = mamba_dim if mamba_dim else input_dim  # Mamba model dimension (d_model)
         self.hidden_dim = hidden_dim    # Hidden dimension for Mamba
-        self.score_dim = score_dim      # Output score dimension
 
         self.input_proj = nn.Linear(self.embedding_dim, self.mamba_dim) if self.embedding_dim != self.mamba_dim else None
 
-        self.mamba = Mamba(
-            d_model=self.mamba_dim,   # Model dimension d_model
-            d_state=self.hidden_dim,  # SSM state expansion factor
-            d_conv=4,                 # Local convolution width
-            expand=2                  # Block expansion factor
-        ).to("cuda")
-
-        self.scorer = nn.Linear(self.mamba_dim, self.score_dim)  # Multidimensional scores
+        self.mamba_layers = nn.ModuleList([
+            Mamba(
+                d_model=self.mamba_dim,   # Model dimension d_model
+                d_state=self.hidden_dim,  # SSM state expansion factor
+                d_conv=4,                 # Local convolution width
+                expand=2                  # Block expansion factor
+            ).to('cuda') for _ in range(layers)
+        ])
 
     def forward(self, x):
         """
         Args:
             x: (batch, N, embedding_dim)
         Returns:
-            scores: (batch, N, score_dim)
+            node_feats: (batch, N, model_dim)
         """
         if self.input_proj is not None: # Project input to Mamba dimension (safety)
             x = self.input_proj(x)
-        h = self.mamba(x)  # (batch, N, embedding_dim)
-        scores = self.scorer(h)  # (batch, N, score_dim)
-        return scores
+        for mamba_block in self.mamba_layers:
+            x = mamba_block(x)
+        return x    # [B, N, mamba_dim]
 
 
 class ValueDecoder(nn.Module):
     """
     Value Decoder for the Mamba model.
-    Takes output score vectors from Mamba and performs gumbel sinkhorn sorting to generate a new tour.
+    Takes output feature vectors from Mamba and performs gumbel sinkhorn sorting to generate a new tour.
     """
-    def __init__(self, score_dim, gs_tau, gs_iters):
+    def __init__(self, feature_dim, gs_tau, gs_iters):
         super(ValueDecoder, self).__init__()
-        self.score_dim = score_dim
+        self.feature_dim = feature_dim
         self.gs_tau = gs_tau
         self.gs_iters = gs_iters
 
-        self.score_proj = nn.Linear(self.score_dim, 1)
+        self.score_proj = nn.Linear(self.feature_dim, 1)
 
     # ---- Gumbel noise sampling ----
     def sample_gumbel(self, shape, eps=1e-20, device=None):
