@@ -38,10 +38,10 @@ class Actor(nn.Module):
             soft_perm: (batch_size, seq_length, seq_length) - soft permutation matrix (tour)
         """
         # 1. Encode node features (and cyclic encoding)
-        embeddings = self.encoder(batch)  # (batch_size, seq_length, embedding_dim * 2)
+        nfe, ce = self.encoder(batch)  # (batch_size, seq_length, embedding_dim * 2)
 
         # 2. MambaBlock: get per-node score vectors
-        scores = self.model(embeddings)   # (batch_size, seq_length, score_dim)
+        scores = self.model(torch.cat([nfe, ce], dim=-1))   # (batch_size, seq_length, score_dim)
 
         # 3. ValueDecoder: get soft permutation matrix (tour)
         soft_perm = self.decoder(scores)  # (batch_size, seq_length, seq_length)

@@ -28,7 +28,8 @@ class EmbeddingNet(nn.Module):
         Args:
             N: Number of positions (tour length)
         Returns:
-            embedding: A tensor of shape (N, 2k) containing the cyclic encodings.
+            node feature embedding: A tensor of shape (batch, N, embedding_dim)
+            cyclic embedding: A tensor of shape (batch, N, embedding_dim)
         """
         # tour phases: positions 0...N-1 [N]
         t = torch.arange(N, device=self.device, dtype=torch.float32)
@@ -58,8 +59,7 @@ class EmbeddingNet(nn.Module):
         ce = self.cyclic_encoding(N).unsqueeze(0).repeat(B, 1, 1)  # [B, N, 2k]
         ce = self.cyclic_projection(ce)  # [B, N, embedding_dim]
 
-        feats = torch.cat([nfe, ce], dim=-1)  # (batch, N, embedding_dim * 2)
-        return feats
+        return nfe, ce
 
 
 class MambaBlock(nn.Module):
