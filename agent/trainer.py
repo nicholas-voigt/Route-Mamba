@@ -11,6 +11,7 @@ from utils import greedy_initial_tour, check_feasibility, compute_soft_tour_leng
 class SurrogateLoss:
     def __init__(self, opts):
         self.opts = opts
+        # Initialize actor network
         self.actor = Actor(
             input_dim = opts.problem_input_dim,
             embedding_dim = opts.embedding_dim,
@@ -26,10 +27,13 @@ class SurrogateLoss:
             method = opts.tour_method,
             device = opts.device
         ).to(opts.device)
+        # Initialize optimizer
         self.optimizer = torch.optim.Adam(
             params = self.actor.parameters(),
             lr = opts.lr_model
         )
+        # Initialize simple logger
+        self.training_log = []
 
     def save(self, epoch, save_dir, path_prefix="checkpoint"):
         """
@@ -87,38 +91,62 @@ class SurrogateLoss:
                 num_workers=0,
                 pin_memory=True
             )
-
-            # Batch training loop
+            # Initialize accumulators for logging
             total_loss = 0
+            total_initial_length = 0
+            total_new_length = 0
+            num_samples = len(training_dataloader.dataset)  # type: ignore
+            # Batch training loop
             for batch in training_dataloader:
                 self.actor.train()
                 batch = {k: v.to(self.opts.device) for k, v in batch.items()}
                 coords = batch['coordinates']
 
-                # 1. Create initial tour using greedy heuristic & calculate baseline tour length
-                initial_tours = greedy_initial_tour(coords)  # (B, N, 2)
-                initial_tour_lengths = compute_euclidean_tour(initial_tours)  # (B,)
+                # Create initial tour using greedy heuristic
+                initial_tours = greedy_initial_tour(coords)
 
-                # 2. Forward pass: get straight-through permutation with hard assignments
+                # Forward pass to get the straight-through permutation
                 st_perm = self.actor(initial_tours)
 
-                # 3. Create the new tour using the straight-through permutation
-                # This ensures gradients flow back correctly
-                # Note: The forward pass uses hard_perm values, backward pass uses soft_perm gradients
-                new_tours = torch.bmm(st_perm.transpose(1, 2), initial_tours)  # (B, N, 2)
+                # Create the new tour using the permutation
+                new_tours = torch.bmm(st_perm.transpose(1, 2), initial_tours)
 
-                # 4. Compute surrogate loss
+                # Compute tour lengths
+                initial_tour_lengths = compute_euclidean_tour(initial_tours)
                 new_tour_lengths = compute_euclidean_tour(new_tours)
-                loss = initial_tour_lengths.mean() - new_tour_lengths.mean()
+                
+                # Use the new tour length directly as the loss to minimize
+                loss = new_tour_lengths.mean()
 
-                # 5. Optimize
+                # Optimize
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-                total_loss += loss.item() * coords.size(0)
 
-            avg_loss = total_loss / len(training_dataloader.dataset) # type: ignore
-            print(f"Epoch {epoch+1}/{self.opts.n_epochs} | Avg Loss: {avg_loss:.4f}")
+                # Accumulate metrics for logging
+                total_loss += loss.item() * coords.size(0)
+                total_initial_length += initial_tour_lengths.sum().item()
+                total_new_length += new_tour_lengths.sum().item()
+
+            # 3. Calculate epoch averages and log them
+            avg_loss = total_loss / num_samples
+            avg_initial_length = total_initial_length / num_samples
+            avg_new_length = total_new_length / num_samples
+
+            epoch_log = {
+                'epoch': epoch + 1,
+                'avg_loss': avg_loss,
+                'avg_initial_length': avg_initial_length,
+                'avg_new_length': avg_new_length
+            }
+            self.training_log.append(epoch_log)
+
+            print(
+                f"Epoch {epoch+1}/{self.opts.n_epochs} | "
+                f"Avg Loss: {avg_loss:.4f} | "
+                f"Initial Length: {avg_initial_length:.4f} | "
+                f"New Length: {avg_new_length:.4f}"
+            )
             
             # Save model checkpoint
             self.save(epoch=epoch, save_dir=self.opts.save_dir)
