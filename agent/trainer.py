@@ -5,7 +5,7 @@ from scipy.optimize import linear_sum_assignment
 
 from nets.actor_network import Actor
 from problems.tsp import TSP, TSPDataset
-from utils import greedy_initial_tour, check_feasibility, compute_soft_tour_length
+from utils import greedy_initial_tour, check_feasibility, compute_soft_tour_length, compute_euclidean_tour
 
 
 class SurrogateLoss:
@@ -23,6 +23,7 @@ class SurrogateLoss:
             score_head_bias = opts.score_head_bias,
             gs_tau = opts.gs_tau,
             gs_iters = opts.gs_iters,
+            method = opts.tour_method,
             device = opts.device
         ).to(opts.device)
         self.optimizer = torch.optim.Adam(
@@ -94,21 +95,27 @@ class SurrogateLoss:
                 batch = {k: v.to(self.opts.device) for k, v in batch.items()}
                 coords = batch['coordinates']
 
-                # 1. Create initial tour using greedy heuristic
-                batch_init = greedy_initial_tour(coords)  # (batch_size, seq_length, 2)
+                # 1. Create initial tour using greedy heuristic & calculate baseline tour length
+                initial_tours = greedy_initial_tour(coords)  # (B, N, 2)
+                initial_tour_lengths = compute_euclidean_tour(initial_tours)  # (B,)
 
-                # 2. Forward pass: get soft tour and permutation
-                soft_tour, _ = self.actor(batch_init)
+                # 2. Forward pass: get straight-through permutation with hard assignments
+                st_perm = self.actor(initial_tours)
 
-                # 3. Compute surrogate loss (tour length)
-                tour_length = compute_soft_tour_length(soft_tour)
-                loss = tour_length.mean()
+                # 3. Create the new tour using the straight-through permutation
+                # This ensures gradients flow back correctly
+                # Note: The forward pass uses hard_perm values, backward pass uses soft_perm gradients
+                new_tours = torch.bmm(st_perm.transpose(1, 2), initial_tours)  # (B, N, 2)
+
+                # 4. Compute surrogate loss
+                new_tour_lengths = compute_euclidean_tour(new_tours)
+                loss = initial_tour_lengths.mean() - new_tour_lengths.mean()
 
                 # 5. Optimize
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-                total_loss += loss.item() * batch['coordinates'].size(0)
+                total_loss += loss.item() * coords.size(0)
 
             avg_loss = total_loss / len(training_dataloader.dataset) # type: ignore
             print(f"Epoch {epoch+1}/{self.opts.n_epochs} | Avg Loss: {avg_loss:.4f}")

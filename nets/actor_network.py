@@ -1,12 +1,12 @@
 import torch
 from torch import nn
 
-from nets.model import EmbeddingNet, MambaBlock, GumbelSinkhornDecoder, BilinearScoreHead
+from nets.model import EmbeddingNet, MambaBlock, GumbelSinkhornDecoder, BilinearScoreHead, TourConstructor
 
 
 class Actor(nn.Module):
     def __init__(self, input_dim, embedding_dim, harmonics, frequency_scaling, model_dim, hidden_dim, mamba_layers, 
-                 score_head_dim, score_head_bias, gs_tau, gs_iters, device):
+                 score_head_dim, score_head_bias, gs_tau, gs_iters, method, device):
         super().__init__()
 
         self.encoder = EmbeddingNet(
@@ -32,14 +32,16 @@ class Actor(nn.Module):
             gs_tau = gs_tau,
             gs_iters = gs_iters
         )
+        self.tour_constructor = TourConstructor(
+            method = method
+        )
 
     def forward(self, batch):
         """
         Args:
-            batch: (batch_size, seq_length, input_dim) - node features
+            batch: (B, N, I) - node features
         Returns:
-            soft_tour: (batch_size, seq_length, input_dim) - soft tour (weighted sum of node features)
-            soft_perm: (batch_size, seq_length, seq_length) - soft permutation matrix (tour)
+            st_perm: (B, N, N) - straight-through permutation matrix with hard assignments
         """
         # 1. Encode node features (and cyclic encoding)
         node_embeddings, cyclic_embeddings = self.encoder(batch)  # (B, N, embedding_dim), (B, N, embedding_dim)
@@ -53,8 +55,7 @@ class Actor(nn.Module):
         # 4. ValueDecoder: get soft permutation matrix (tour)
         soft_perm = self.decoder(score_matrix)  # (B, N, N)
 
-        # 5. Compute soft tour by multiplying permutation with node coordinates
-        # batch: (B, N, input_dim)
-        soft_tour = torch.bmm(soft_perm, batch)  # (B, N, input_dim)
+        # 5. Compute tour and straight-through permutation
+        st_perm = self.tour_constructor(soft_perm)  # (B, N, N)
 
-        return soft_tour, soft_perm
+        return st_perm

@@ -25,6 +25,7 @@ def get_options(args=None):
     parser.add_argument('--score_head_bias', type=bool, default=True, help='whether to use bias in score head')
     parser.add_argument('--gs_tau', type=float, default=1.0, help='Gumbel-Sinkhorn temperature')
     parser.add_argument('--gs_iters', type=int, default=20, help='Number of Sinkhorn iterations')
+    parser.add_argument('--tour_method', type=str, default='greedy', choices=['greedy', 'hungarian'], help='Method for tour construction')
 
     # Training parameters
     parser.add_argument('--RL_agent', default='surrogate', choices = ['surrogate'], help='RL Training algorithm')

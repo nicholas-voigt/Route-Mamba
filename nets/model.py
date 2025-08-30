@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy.optimize import linear_sum_assignment
 import math
-import numpy as np
 from mamba_ssm import Mamba
 
 
@@ -170,9 +170,10 @@ class GumbelSinkhornDecoder(nn.Module):
             scores = scores - torch.logsumexp(scores, dim=2, keepdim=True)  # row norm
             scores = scores - torch.logsumexp(scores, dim=1, keepdim=True)  # col norm
         return torch.exp(scores)
-
+    
     def forward(self, scores: torch.Tensor) -> torch.Tensor:
         """
+        Forward pass for the permutation layer. Converts a score matrix into a soft permutation matrix.
         Args:
             score matrix [B, N, N] - should be in logit space (unbounded)
         Returns:
@@ -182,5 +183,91 @@ class GumbelSinkhornDecoder(nn.Module):
         gumbel_noise = self.sample_gumbel(scores.shape, device=scores.device)
         scores = (scores + gumbel_noise) / self.gs_tau
         # Sinkhorn normalization to get doubly stochastic matrix
-        perm = self.sinkhorn(scores)
-        return perm
+        soft_perm = self.sinkhorn(scores)
+        return soft_perm
+    
+
+class TourConstructor(nn.Module):
+    """
+    Creates a hard tour from the given soft permutation matrix.
+    Applies straight-through estimation for gradient flow.
+    """
+    def __init__(self, method: str):
+        super(TourConstructor, self).__init__()
+        self.method = method
+
+    # ---- Greedy Permutation Hardening ----
+    def greedy_hard_perm(self, soft_perm: torch.Tensor) -> torch.Tensor:
+        """
+        Converts a soft permutation matrix to a hard one using an efficient,
+        iterative greedy assignment strategy that is fully vectorized across the batch.
+        In each step, it finds the highest-scoring available assignment and commits to it.
+        Args:
+            soft_perm: (tensor: B, N, N) soft permutation matrix - rows = nodes, cols = positions
+        Returns:
+            (tensor: B, N, N) hard permutation matrix
+        """
+        B, N, _ = soft_perm.shape
+        device, dtype = soft_perm.device, soft_perm.dtype
+
+        row_mask = torch.zeros(B, N, dtype=torch.bool, device=device)
+        col_mask = torch.zeros(B, N, dtype=torch.bool, device=device)
+        NEG = torch.finfo(dtype).min
+        hard_perm = torch.zeros_like(soft_perm)
+        scores = soft_perm.clone()
+        batch_indices = torch.arange(B, device=device)
+
+        for _ in range(N):
+            # Mask out scores of already assigned rows and columns via broadcasting
+            scores.masked_fill_(row_mask.unsqueeze(2), NEG)
+            scores.masked_fill_(col_mask.unsqueeze(1), NEG)
+            # Find the entry with the highest score in the entire remaining matrix for each batch item
+            _, flat_indices = scores.view(B, -1).max(dim=1)
+            # Convert the flat index back to 2D row and column indices
+            row_idx = flat_indices // N
+            col_idx = flat_indices % N
+            # Assign the winning entry in the hard permutation matrix
+            hard_perm[batch_indices, row_idx, col_idx] = 1.0
+            # Update the masks to mark this row and column as assigned
+            row_mask[batch_indices, row_idx] = True
+            col_mask[batch_indices, col_idx] = True
+
+        return hard_perm
+    
+    # ---- Hungarian Permutation Hardening ----
+    def hungarian_hard_perm(self, soft_perm: torch.Tensor) -> torch.Tensor:
+        """
+        Converts soft permutation matrix to hard permutation matrix using Hungarian algorithm.
+        Runs on CPU only in O(N^3) time, but delivers best quality.
+        Args:
+            soft permutation matrix (B, N, N) - rows = nodes (i), cols = positions (j)
+        """
+        B, _, _ = soft_perm.shape
+        hard_perm = torch.zeros_like(soft_perm)
+        soft_perm_cpu = soft_perm.detach().cpu().numpy()  # Hungarian works on CPU only
+        for b in range(B):
+            # Maximize sum of P_ij  ==  minimize cost = negative P
+            ri, cj = linear_sum_assignment(-soft_perm_cpu[b])
+            hard_perm[b, ri, cj] = 1.0
+        return hard_perm
+
+    def forward(self, soft_perm: torch.Tensor):
+        """
+        Forward pass for the tour constructor. Converts a soft permutation matrix to hard permutation matrix using straight-through estimator.
+        Forward pass uses hard permutation, backward pass uses soft permutation for gradient flow.
+        Implements a greedy argmax approach and the hungarian algorithm.
+        Args:
+            soft_perm: (B, N, N) - soft permutation matrix, Rows = nodes (i), Cols = positions (j).
+            method: (str) - method for hard permutation extraction ("greedy" or "hungarian")
+        Returns:
+            straight_through_perm: (B, N, N) - straight-through permutation matrix for gradient flow
+        """
+        if self.method == "greedy":
+            hard_perm = self.greedy_hard_perm(soft_perm)
+        elif self.method == "hungarian":
+            hard_perm = self.hungarian_hard_perm(soft_perm)
+        else:
+            raise ValueError(f"Unknown method: {self.method}")
+        # ST trick for gradient flow
+        straight_through_perm = hard_perm + (soft_perm - soft_perm.detach())
+        return straight_through_perm
