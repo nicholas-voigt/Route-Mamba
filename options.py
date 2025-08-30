@@ -10,7 +10,7 @@ def get_options(args=None):
 
     # Overall settings
     parser.add_argument('--problem', default='tsp', choices = ['vrp', 'tsp'], help="the targeted problem to solve, default 'tsp'")
-    parser.add_argument('--graph_size', type=int, default=20, help="the number of customers in the targeted problem (graph size)")
+    parser.add_argument('--graph_size', type=int, default=100, help="the number of customers in the targeted problem (graph size)")
     parser.add_argument('--seed', type=int, default=1234, help='random seed to use')
     
     # Route-Mamba parameters
@@ -29,9 +29,9 @@ def get_options(args=None):
 
     # Training parameters
     parser.add_argument('--RL_agent', default='surrogate', choices = ['surrogate'], help='RL Training algorithm')
-    parser.add_argument('--n_epochs', type=int, default=3, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=600,help='number of instances per batch during training')
-    parser.add_argument('--epoch_size', type=int, default=12000, help='number of instances per epoch during training')
+    parser.add_argument('--n_epochs', type=int, default=20, help='Number of training epochs')
+    parser.add_argument('--batch_size', type=int, default=100,help='number of instances per batch during training')
+    parser.add_argument('--epoch_size', type=int, default=1000, help='number of instances per epoch during training')
     parser.add_argument('--lr_model', type=float, default=1e-4, help="learning rate for the actor network")
     
     # Inference and validation parameters
