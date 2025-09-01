@@ -23,7 +23,8 @@ def get_options(args=None):
     parser.add_argument('--mamba_layers', type=int, default=3, help='number of stacked Mamba blocks in the model')
     parser.add_argument('--score_head_dim', type=int, default=128, help='dimension of the bilinear score head to construct score matrix')
     parser.add_argument('--score_head_bias', type=bool, default=True, help='whether to use bias in score head')
-    parser.add_argument('--gs_tau', type=float, default=1.0, help='Gumbel-Sinkhorn temperature')
+    parser.add_argument('--gs_tau_initial', type=float, default=5.0, help='Gumbel-Sinkhorn initial temperature')
+    parser.add_argument('--gs_tau_final', type=float, default=0.5, help='Gumbel-Sinkhorn final temperature')
     parser.add_argument('--gs_iters', type=int, default=20, help='Number of Sinkhorn iterations')
     parser.add_argument('--tour_method', type=str, default='greedy', choices=['greedy', 'hungarian'], help='Method for tour construction')
 

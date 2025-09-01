@@ -22,7 +22,7 @@ class SurrogateLoss:
             mamba_layers = opts.mamba_layers,
             score_head_dim = opts.score_head_dim,
             score_head_bias = opts.score_head_bias,
-            gs_tau = opts.gs_tau,
+            gs_tau = opts.gs_tau_initial,
             gs_iters = opts.gs_iters,
             method = opts.tour_method,
             device = opts.device
@@ -78,6 +78,9 @@ class SurrogateLoss:
         """
         torch.manual_seed(self.opts.seed)
 
+        # Initialize Gumbel-Sinkhorn parameters
+        anneal_rate = (self.opts.gs_tau_initial / self.opts.gs_tau_final) ** (1.0 / self.opts.n_epochs)
+
         for epoch in range(self.opts.n_epochs):
             # prepare training data
             training_dataset = problem.make_dataset(
@@ -96,6 +99,9 @@ class SurrogateLoss:
             total_initial_length = 0
             total_new_length = 0
             num_samples = len(training_dataloader.dataset)  # type: ignore
+            # Update Gumbel-Sinkhorn temperature
+            self.actor.decoder.gs_tau = max(self.opts.gs_tau_final, self.actor.decoder.gs_tau / anneal_rate)
+
             # Batch training loop
             for batch in training_dataloader:
                 self.actor.train()
