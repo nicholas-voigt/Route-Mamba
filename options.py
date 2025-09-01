@@ -10,7 +10,7 @@ def get_options(args=None):
 
     # Overall settings
     parser.add_argument('--problem', default='tsp', choices = ['vrp', 'tsp'], help="the targeted problem to solve, default 'tsp'")
-    parser.add_argument('--graph_size', type=int, default=20, help="the number of customers in the targeted problem (graph size)")
+    parser.add_argument('--graph_size', type=int, default=100, help="the number of customers in the targeted problem (graph size)")
     parser.add_argument('--seed', type=int, default=1234, help='random seed to use')
     
     # Route-Mamba parameters
@@ -21,15 +21,18 @@ def get_options(args=None):
     parser.add_argument('--model_dim', type=int, default=64, help='dimension of the mamba model (default equal to 2 * embedding_dim)')
     parser.add_argument('--hidden_dim', type=int, default=128, help='dimension of hidden state representation in Mamba')
     parser.add_argument('--mamba_layers', type=int, default=3, help='number of stacked Mamba blocks in the model')
-    parser.add_argument('--score_dim', type=int, default=4, help='dimension of output score vector')
-    parser.add_argument('--gs_tau', type=float, default=1.0, help='Gumbel-Sinkhorn temperature')
+    parser.add_argument('--score_head_dim', type=int, default=128, help='dimension of the bilinear score head to construct score matrix')
+    parser.add_argument('--score_head_bias', type=bool, default=True, help='whether to use bias in score head')
+    parser.add_argument('--gs_tau_initial', type=float, default=5.0, help='Gumbel-Sinkhorn initial temperature')
+    parser.add_argument('--gs_tau_final', type=float, default=0.5, help='Gumbel-Sinkhorn final temperature')
     parser.add_argument('--gs_iters', type=int, default=20, help='Number of Sinkhorn iterations')
+    parser.add_argument('--tour_method', type=str, default='greedy', choices=['greedy', 'hungarian'], help='Method for tour construction')
 
     # Training parameters
     parser.add_argument('--RL_agent', default='surrogate', choices = ['surrogate'], help='RL Training algorithm')
-    parser.add_argument('--n_epochs', type=int, default=3, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=600,help='number of instances per batch during training')
-    parser.add_argument('--epoch_size', type=int, default=12000, help='number of instances per epoch during training')
+    parser.add_argument('--n_epochs', type=int, default=20, help='Number of training epochs')
+    parser.add_argument('--batch_size', type=int, default=100,help='number of instances per batch during training')
+    parser.add_argument('--epoch_size', type=int, default=1000, help='number of instances per epoch during training')
     parser.add_argument('--lr_model', type=float, default=1e-4, help="learning rate for the actor network")
     
     # Inference and validation parameters

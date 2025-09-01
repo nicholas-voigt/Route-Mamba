@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy.optimize import linear_sum_assignment
 import math
-import numpy as np
 from mamba_ssm import Mamba
 
 
@@ -105,18 +105,59 @@ class MambaBlock(nn.Module):
         return x    # [B, N, mamba_dim]
 
 
-class ValueDecoder(nn.Module):
+class BilinearScoreHead(nn.Module):
     """
-    Value Decoder for the Mamba model.
-    Takes output feature vectors from Mamba and performs gumbel sinkhorn sorting to generate a new tour.
+    Takes Mamba and cyclic features as input and builds a score matrix S for gumbel-sinkhorn soft permutation.
+    Build S in [B x N x N] from:
+      E = mamba_features in [B x N x model_dim]
+      R = cyclic_feats    in [B x N x embedding_dim]
+      W = bilinear_weights in [d_head x d_head]
+    via S = (E U_e) W (R U_r)^T
     """
-    def __init__(self, feature_dim, gs_tau, gs_iters):
-        super(ValueDecoder, self).__init__()
-        self.feature_dim = feature_dim
+    def __init__(self, model_dim: int, embedding_dim: int, d_head: int = 128, bias: bool = True):
+        super().__init__()
+        self.proj_e = nn.Linear(model_dim,    d_head, bias=False)  # U_e
+        self.proj_r = nn.Linear(embedding_dim, d_head, bias=False) # U_r
+        self.W      = nn.Parameter(torch.empty(d_head, d_head))    # bilinear core
+        nn.init.xavier_uniform_(self.W)
+
+        if bias:
+            self.node_bias = nn.Parameter(torch.zeros(1, 1, 1))   # optional global scalar
+            self.pos_bias  = nn.Parameter(torch.zeros(1, 1, 1))
+        else:
+            self.register_parameter("node_bias", None)
+            self.register_parameter("pos_bias", None)
+
+    def forward(self, mamba_features: torch.Tensor, cyclic_feats: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            mamba_features: [B, N, model_dim]
+            cyclic_feats:   [B, N, embedding_dim]
+        Returns:
+            S: [B, N, N] (rows = nodes i, cols = positions j)
+        """
+        E = self.proj_e(mamba_features)          # [B, N, d_head]
+        R = self.proj_r(cyclic_feats)            # [B, N, d_head]
+
+        # Apply bilinear core: (E @ W) @ R^T
+        Ew = E @ self.W                          # [B, N, d_head]
+        S  = torch.matmul(Ew, R.transpose(1, 2)) # [B, N, N]
+
+        if self.node_bias is not None:
+            S = S + self.node_bias + self.pos_bias
+        return S
+
+
+class GumbelSinkhornDecoder(nn.Module):
+    """
+    Takes score matrix [B, N, N] as input,
+    introduces Gumbel noise via sampling and scales scores according to temperature gs_tau,
+    performs Sinkhorn normalization for gs_iters iterations (larger -> closer to true permutation) to get a doubly stochastic matrix.
+    """
+    def __init__(self, gs_tau, gs_iters):
+        super().__init__()
         self.gs_tau = gs_tau
         self.gs_iters = gs_iters
-
-        self.score_proj = nn.Linear(self.feature_dim, 1)
 
     # ---- Gumbel noise sampling ----
     def sample_gumbel(self, shape, eps=1e-20, device=None):
@@ -124,39 +165,109 @@ class ValueDecoder(nn.Module):
         return -torch.log(-torch.log(U + eps) + eps)
 
     # ---- Sinkhorn normalization ----
-    def sinkhorn(self, log_alpha):
+    def sinkhorn(self, scores: torch.Tensor) -> torch.Tensor:
         for _ in range(self.gs_iters):
-            log_alpha = log_alpha - torch.logsumexp(log_alpha, dim=2, keepdim=True)  # row norm
-            log_alpha = log_alpha - torch.logsumexp(log_alpha, dim=1, keepdim=True)  # col norm
-        return torch.exp(log_alpha)
-
-    # ---- Gumbel-Sinkhorn operator ----
-    def gumbel_sinkhorn(self, scores):
+            scores = scores - torch.logsumexp(scores, dim=2, keepdim=True)  # row norm
+            scores = scores - torch.logsumexp(scores, dim=1, keepdim=True)  # col norm
+        return torch.exp(scores)
+    
+    def forward(self, scores: torch.Tensor) -> torch.Tensor:
         """
+        Forward pass for the permutation layer. Converts a score matrix into a soft permutation matrix.
         Args:
-            scores: (batch, N)
+            score matrix [B, N, N] - should be in logit space (unbounded)
         Returns:
-            (batch, N, N) permutation matrix
+            soft permutation matrix [B, N, N]
         """
-        _, N = scores.shape
-        # Expand scores to NxN matrix by repeating across columns
-        log_alpha = scores.unsqueeze(2).expand(-1, -1, N)  # (batch, N, N)
         # Add Gumbel noise
-        gumbel_noise = self.sample_gumbel(log_alpha.shape, device=scores.device)
-        log_alpha = (log_alpha + gumbel_noise) / self.gs_tau
+        gumbel_noise = self.sample_gumbel(scores.shape, device=scores.device)
+        scores = (scores + gumbel_noise) / self.gs_tau
         # Sinkhorn normalization to get doubly stochastic matrix
-        P_hat = self.sinkhorn(log_alpha)
-        return P_hat  # (batch, N, N)
+        soft_perm = self.sinkhorn(scores)
+        return soft_perm
+    
 
-    def forward(self, scores):
+class TourConstructor(nn.Module):
+    """
+    Creates a hard tour from the given soft permutation matrix.
+    Applies straight-through estimation for gradient flow.
+    """
+    def __init__(self, method: str):
+        super(TourConstructor, self).__init__()
+        self.method = method
+
+    # ---- Greedy Permutation Hardening ----
+    def greedy_hard_perm(self, soft_perm: torch.Tensor) -> torch.Tensor:
         """
+        Converts a soft permutation matrix to a hard one using an efficient,
+        iterative greedy assignment strategy that is fully vectorized across the batch.
+        In each step, it finds the highest-scoring available assignment and commits to it.
         Args:
-            scores: (batch, N, score_dim) - scores from Mamba model
+            soft_perm: (tensor: B, N, N) soft permutation matrix - rows = nodes, cols = positions
         Returns:
-            P_hat: (batch, N, N) - soft permutation matrix
+            (tensor: B, N, N) hard permutation matrix
         """
-        # Project multidimensional scores to scalar per node
-        scalar_scores = self.score_proj(scores).squeeze(-1)  # (batch, N)
-        # Apply Gumbel-Sinkhorn
-        P_hat = self.gumbel_sinkhorn(scalar_scores)
-        return P_hat
+        B, N, _ = soft_perm.shape
+        device, dtype = soft_perm.device, soft_perm.dtype
+
+        row_mask = torch.zeros(B, N, dtype=torch.bool, device=device)
+        col_mask = torch.zeros(B, N, dtype=torch.bool, device=device)
+        NEG = torch.finfo(dtype).min
+        hard_perm = torch.zeros_like(soft_perm)
+        scores = soft_perm.clone()
+        batch_indices = torch.arange(B, device=device)
+
+        for _ in range(N):
+            # Mask out scores of already assigned rows and columns via broadcasting
+            scores.masked_fill_(row_mask.unsqueeze(2), NEG)
+            scores.masked_fill_(col_mask.unsqueeze(1), NEG)
+            # Find the entry with the highest score in the entire remaining matrix for each batch item
+            _, flat_indices = scores.view(B, -1).max(dim=1)
+            # Convert the flat index back to 2D row and column indices
+            row_idx = flat_indices // N
+            col_idx = flat_indices % N
+            # Assign the winning entry in the hard permutation matrix
+            hard_perm[batch_indices, row_idx, col_idx] = 1.0
+            # Update the masks to mark this row and column as assigned
+            row_mask[batch_indices, row_idx] = True
+            col_mask[batch_indices, col_idx] = True
+
+        return hard_perm
+    
+    # ---- Hungarian Permutation Hardening ----
+    def hungarian_hard_perm(self, soft_perm: torch.Tensor) -> torch.Tensor:
+        """
+        Converts soft permutation matrix to hard permutation matrix using Hungarian algorithm.
+        Runs on CPU only in O(N^3) time, but delivers best quality.
+        Args:
+            soft permutation matrix (B, N, N) - rows = nodes (i), cols = positions (j)
+        """
+        B, _, _ = soft_perm.shape
+        hard_perm = torch.zeros_like(soft_perm)
+        soft_perm_cpu = soft_perm.detach().cpu().numpy()  # Hungarian works on CPU only
+        for b in range(B):
+            # Maximize sum of P_ij  ==  minimize cost = negative P
+            ri, cj = linear_sum_assignment(-soft_perm_cpu[b])
+            hard_perm[b, ri, cj] = 1.0
+        return hard_perm
+
+    def forward(self, soft_perm: torch.Tensor):
+        """
+        Forward pass for the tour constructor. Converts a soft permutation matrix to hard permutation matrix using straight-through estimator.
+        Forward pass uses hard permutation, backward pass uses soft permutation for gradient flow.
+        Implements a greedy argmax approach and the hungarian algorithm.
+        Args:
+            soft_perm: (B, N, N) - soft permutation matrix, Rows = nodes (i), Cols = positions (j).
+            method: (str) - method for hard permutation extraction ("greedy" or "hungarian")
+        Returns:
+            straight_through_perm: (B, N, N) - straight-through permutation matrix for gradient flow
+        """
+        if self.method == "greedy":
+            hard_perm = self.greedy_hard_perm(soft_perm)
+        elif self.method == "hungarian":
+            hard_perm = self.hungarian_hard_perm(soft_perm)
+        else:
+            raise ValueError(f"Unknown method: {self.method}")
+        # ST trick for gradient flow
+        straight_through_perm = hard_perm + (soft_perm - soft_perm.detach())
+        return straight_through_perm

@@ -56,3 +56,18 @@ def compute_soft_tour_length(soft_tour):
     last_to_first = torch.norm(soft_tour[:, 0, :] - soft_tour[:, -1, :], dim=-1)  # (batch_size,)
     tour_length = segment_lengths.sum(dim=1) + last_to_first
     return tour_length
+
+def compute_euclidean_tour(tour):
+    """
+    Compute the tour length using euclidean with x & y coordinates
+    Args:
+        tour: (B, N, 2) - tour coordinates
+    Returns:
+        tour_length: (B,) - Euclidean tour length for each tour in the batch
+    """
+    assert tour.dim() == 3 and tour.size(-1) == 2, "Input must be of shape (B, N, 2)"
+    # Shift coordinates by one in tour to get next node
+    rolled_tour = torch.roll(tour, shifts=-1, dims=1)
+    # Compute distances between consecutive nodes & return the sum
+    segment_lengths = torch.linalg.vector_norm(tour - rolled_tour, ord=2, dim=-1)
+    return segment_lengths.sum(dim=1)

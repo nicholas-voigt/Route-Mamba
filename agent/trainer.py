@@ -5,12 +5,13 @@ from scipy.optimize import linear_sum_assignment
 
 from nets.actor_network import Actor
 from problems.tsp import TSP, TSPDataset
-from utils import greedy_initial_tour, check_feasibility, compute_soft_tour_length
+from utils import greedy_initial_tour, check_feasibility, compute_soft_tour_length, compute_euclidean_tour
 
 
 class SurrogateLoss:
     def __init__(self, opts):
         self.opts = opts
+        # Initialize actor network
         self.actor = Actor(
             input_dim = opts.problem_input_dim,
             embedding_dim = opts.embedding_dim,
@@ -19,14 +20,20 @@ class SurrogateLoss:
             model_dim = opts.model_dim,
             hidden_dim = opts.hidden_dim,
             mamba_layers = opts.mamba_layers,
-            gs_tau = opts.gs_tau,
+            score_head_dim = opts.score_head_dim,
+            score_head_bias = opts.score_head_bias,
+            gs_tau = opts.gs_tau_initial,
             gs_iters = opts.gs_iters,
+            method = opts.tour_method,
             device = opts.device
         ).to(opts.device)
+        # Initialize optimizer
         self.optimizer = torch.optim.Adam(
             params = self.actor.parameters(),
             lr = opts.lr_model
         )
+        # Initialize simple logger
+        self.training_log = []
 
     def save(self, epoch, save_dir, path_prefix="checkpoint"):
         """
@@ -71,6 +78,9 @@ class SurrogateLoss:
         """
         torch.manual_seed(self.opts.seed)
 
+        # Initialize Gumbel-Sinkhorn parameters
+        anneal_rate = (self.opts.gs_tau_initial / self.opts.gs_tau_final) ** (1.0 / self.opts.n_epochs)
+
         for epoch in range(self.opts.n_epochs):
             # prepare training data
             training_dataset = problem.make_dataset(
@@ -84,32 +94,65 @@ class SurrogateLoss:
                 num_workers=0,
                 pin_memory=True
             )
+            # Initialize accumulators for logging
+            total_loss = 0
+            total_initial_length = 0
+            total_new_length = 0
+            num_samples = len(training_dataloader.dataset)  # type: ignore
+            # Update Gumbel-Sinkhorn temperature
+            self.actor.decoder.gs_tau = max(self.opts.gs_tau_final, self.actor.decoder.gs_tau / anneal_rate)
 
             # Batch training loop
-            total_loss = 0
             for batch in training_dataloader:
                 self.actor.train()
                 batch = {k: v.to(self.opts.device) for k, v in batch.items()}
                 coords = batch['coordinates']
 
-                # 1. Create initial tour using greedy heuristic
-                batch_init = greedy_initial_tour(coords)  # (batch_size, seq_length, 2)
+                # Create initial tour using greedy heuristic
+                initial_tours = greedy_initial_tour(coords)
 
-                # 2. Forward pass: get soft tour and permutation
-                soft_tour, _ = self.actor(batch_init)
+                # Forward pass to get the straight-through permutation
+                st_perm = self.actor(initial_tours)
 
-                # 3. Compute surrogate loss (tour length)
-                tour_length = compute_soft_tour_length(soft_tour)
-                loss = tour_length.mean()
+                # Create the new tour using the permutation
+                new_tours = torch.bmm(st_perm, initial_tours)
 
-                # 5. Optimize
+                # Compute tour lengths
+                initial_tour_lengths = compute_euclidean_tour(initial_tours)
+                new_tour_lengths = compute_euclidean_tour(new_tours)
+                
+                # Use the new tour length directly as the loss to minimize
+                loss = new_tour_lengths.mean()
+
+                # Optimize
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-                total_loss += loss.item() * batch['coordinates'].size(0)
 
-            avg_loss = total_loss / len(training_dataloader.dataset) # type: ignore
-            print(f"Epoch {epoch+1}/{self.opts.n_epochs} | Avg Loss: {avg_loss:.4f}")
+                # Accumulate metrics for logging
+                total_loss += loss.item() * coords.size(0)
+                total_initial_length += initial_tour_lengths.sum().item()
+                total_new_length += new_tour_lengths.sum().item()
+
+            # 3. Calculate epoch averages and log them
+            avg_loss = total_loss / num_samples
+            avg_initial_length = total_initial_length / num_samples
+            avg_new_length = total_new_length / num_samples
+
+            epoch_log = {
+                'epoch': epoch + 1,
+                'avg_loss': avg_loss,
+                'avg_initial_length': avg_initial_length,
+                'avg_new_length': avg_new_length
+            }
+            self.training_log.append(epoch_log)
+
+            print(
+                f"Epoch {epoch+1}/{self.opts.n_epochs} | "
+                f"Avg Loss: {avg_loss:.4f} | "
+                f"Initial Length: {avg_initial_length:.4f} | "
+                f"New Length: {avg_new_length:.4f}"
+            )
             
             # Save model checkpoint
             self.save(epoch=epoch, save_dir=self.opts.save_dir)
