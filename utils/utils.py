@@ -1,32 +1,69 @@
 import torch
 
 
-def greedy_initial_tour(coords):
+def greedy_initial_tour(batch: torch.Tensor):
     """
     Creates an initial tour for the TSP problem using a greedy nearest neighbor heuristic.
     Args:
-        coords: (batch_size, seq_length, 2)
+        batch: (B, N, 2) - coordinates of nodes
     Returns: 
-        (batch_size, seq_length, 2) - nodes in greedy order
+        (B, N, 2) - nodes in greedy order
     """
-    batch_size, size, _ = coords.size()
-    device = coords.device
-    visited = torch.zeros(batch_size, size, dtype=torch.bool, device=device)
-    route = torch.zeros(batch_size, size, dtype=torch.long, device=device)
-    current = torch.zeros(batch_size, dtype=torch.long, device=device)
-    route[:, 0] = current
-    visited[:, 0] = True
-    for i in range(1, size):
-        last_coords = coords[torch.arange(batch_size), current].unsqueeze(1)
-        dists = torch.norm(coords - last_coords, dim=2)
-        dists[visited] = float('inf')
-        next_node = dists.argmin(dim=1)
-        route[:, i] = next_node
-        visited[torch.arange(batch_size), next_node] = True
-        current = next_node
-    # Reorder coords according to route
-    greedy_coords = coords.gather(1, route.unsqueeze(-1).expand(-1, -1, 2))
-    return greedy_coords
+    B, N, _ = batch.size()
+    MAX = torch.finfo(batch.dtype).max
+    device = batch.device
+    # Calculate full pairwise distance matrix (B, N, N)
+    dist_matrix = torch.linalg.vector_norm(batch.unsqueeze(2) - batch.unsqueeze(1), dim=-1)
+    # Initialize tour and masks
+    route = torch.zeros(B, N, dtype=torch.long, device=device)
+    visited_mask = torch.ones(B, N, dtype=torch.bool, device=device)
+    # Select start at node (0) for all instances in the batch
+    current_node = torch.zeros(B, dtype=torch.long, device=device)
+    route[:, 0] = current_node
+    visited_mask[torch.arange(B), current_node] = False
+    # Build tour iteratively
+    for i in range(1, N):
+        # Get distances from the current node to all other nodes & mask out visited
+        current_dists = dist_matrix[torch.arange(B), current_node]
+        current_dists[~visited_mask] = MAX
+        # Find the nearest unvisited node & update route and mask
+        current_node = torch.argmin(current_dists, dim=1)
+        route[:, i] = current_node
+        visited_mask[torch.arange(B), current_node] = False
+    # Reorder original coordinates based on the computed route
+    return batch.gather(1, route.unsqueeze(-1).expand(-1, -1, 2))
+
+def random_initial_tour(batch: torch.Tensor):
+    """
+    Creates a random initial tour for the TSP problem.
+    Args:
+        batch: (B, N, 2) - coordinates of nodes
+    Returns:
+        (B, N, 2) - nodes in random order
+    """
+    B, N, _ = batch.size()
+    device = batch.device
+    # Unique random permutation for each item in the batch
+    random_values = torch.rand(B, N, device=device)
+    # Get the indices that sort these values along the node dimension.
+    random_indices = random_values.argsort(dim=1)
+    return batch.gather(1, random_indices.unsqueeze(-1).expand(-1, -1, 2))
+
+def get_initial_tours(batch: torch.Tensor, method: str):
+    """
+    Generate initial tours for a batch of TSP instances.
+    Args:
+        batch: (B, N, 2) - coordinates of nodes
+        method: str - method to use for generating initial tours (greedy, random)
+    Returns:
+        (B, N, 2) - initial tours
+    """
+    if method == "greedy":
+        return greedy_initial_tour(batch)
+    elif method == "random":
+        return random_initial_tour(batch)
+    else:
+        raise ValueError(f"Unknown method: {method}")
 
 def check_feasibility(solutions):
     """
@@ -40,22 +77,6 @@ def check_feasibility(solutions):
     expected = torch.arange(size, device=solutions.device).view(1, -1).expand(batch_size, -1)
     is_feasible = (solutions.sort(dim=1)[0] == expected).all(dim=1)
     assert is_feasible.all(), "One or more tours do not visit all nodes exactly once."
-
-def compute_soft_tour_length(soft_tour):
-    """
-    Computes the (differentiable) tour length for a soft tour.
-    Args:
-        soft_tour: (batch_size, seq_length, 2) - soft tour coordinates
-    Returns:
-        tour_length: (batch_size,) - differentiable tour length
-    """
-    # Compute pairwise distances between consecutive nodes
-    diff = soft_tour[:, 1:, :] - soft_tour[:, :-1, :]  # (batch_size, seq_length-1, 2)
-    segment_lengths = torch.norm(diff, dim=-1)         # (batch_size, seq_length-1)
-    # Add distance from last to first to complete the tour
-    last_to_first = torch.norm(soft_tour[:, 0, :] - soft_tour[:, -1, :], dim=-1)  # (batch_size,)
-    tour_length = segment_lengths.sum(dim=1) + last_to_first
-    return tour_length
 
 def compute_euclidean_tour(tour):
     """
