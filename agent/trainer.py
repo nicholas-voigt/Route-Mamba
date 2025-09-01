@@ -115,7 +115,7 @@ class SurrogateLoss:
                 st_perm = self.actor(initial_tours)
 
                 # Create the new tour using the permutation
-                new_tours = torch.bmm(st_perm.transpose(1, 2), initial_tours)
+                new_tours = torch.bmm(st_perm, initial_tours)
 
                 # Compute tour lengths
                 initial_tour_lengths = compute_euclidean_tour(initial_tours)
