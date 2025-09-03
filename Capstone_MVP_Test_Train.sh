@@ -58,4 +58,4 @@ pip3 install -q torch torchvision torchaudio
 pip3 install -q mamba_ssm
 
 # Submit your job to the cluster
-srun --gres=gpu:1 python run.py
+srun --gres=gpu:1 python run.py --tour_heuristic random --tour_method hungarian --checkpoint_epochs 0

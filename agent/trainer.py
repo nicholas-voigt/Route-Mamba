@@ -152,7 +152,8 @@ class SurrogateLoss:
             )
             
             # Save model checkpoint
-            self.save(epoch=epoch, save_dir=self.opts.save_dir)
+            if self.opts.checkpoint_epochs and (epoch + 1) % self.opts.checkpoint_epochs == 0:
+                self.save(epoch=epoch, save_dir=self.opts.save_dir)
 
     def evaluate(self, problem: TSP):
         """
