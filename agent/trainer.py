@@ -12,12 +12,11 @@ class SurrogateLoss:
         self.opts = opts
         # Initialize actor network
         self.actor = Actor(
-            input_dim = opts.problem_input_dim,
+            input_dim = opts.input_dim,
             embedding_dim = opts.embedding_dim,
-            harmonics = opts.harmonics,
+            num_harmonics = opts.num_harmonics,
             frequency_scaling = opts.frequency_scaling,
-            model_dim = opts.model_dim,
-            hidden_dim = opts.hidden_dim,
+            mamba_hidden_dim = opts.mamba_hidden_dim,
             mamba_layers = opts.mamba_layers,
             score_head_dim = opts.score_head_dim,
             score_head_bias = opts.score_head_bias,

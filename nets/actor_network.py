@@ -5,27 +5,26 @@ from nets.model import EmbeddingNet, MambaBlock, GumbelSinkhornDecoder, Bilinear
 
 
 class Actor(nn.Module):
-    def __init__(self, input_dim, embedding_dim, harmonics, frequency_scaling, model_dim, hidden_dim, mamba_layers, 
+    def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers, 
                  score_head_dim, score_head_bias, gs_tau, gs_iters, method, device):
         super().__init__()
 
         self.encoder = EmbeddingNet(
-            node_dim = input_dim,
+            input_dim = input_dim,
             embedding_dim = embedding_dim,
-            k = harmonics,
+            num_harmonics = num_harmonics,
             device = device,
             alpha = frequency_scaling
         )
         self.model = MambaBlock(
-            input_dim = embedding_dim * 2,
-            mamba_dim = model_dim,
-            hidden_dim = hidden_dim,
-            layers = mamba_layers
+            mamba_model_size = 2 * embedding_dim,
+            mamba_hidden_state_size = mamba_hidden_dim,
+            mamba_layers = mamba_layers
         )
         self.score_constructor = BilinearScoreHead(
-            model_dim = model_dim,
-            embedding_dim = embedding_dim,
-            d_head = score_head_dim,
+            model_vector_size = 4 * embedding_dim,
+            cycle_vector_size = embedding_dim,
+            score_head_dim = score_head_dim,
             bias = score_head_bias
         )
         self.decoder = GumbelSinkhornDecoder(
@@ -39,15 +38,15 @@ class Actor(nn.Module):
     def forward(self, batch):
         """
         Args:
-            batch: (B, N, I) - node features
+            batch: (B, N, I) - node features with 2D coordinates
         Returns:
-            st_perm: (B, N, N) - straight-through permutation matrix with hard assignments
+            st_perm: (B, N, I) - new tours
         """
         # 1. Encode node features (and cyclic encoding)
-        node_embeddings, cyclic_embeddings = self.encoder(batch)  # (B, N, embedding_dim), (B, N, embedding_dim)
+        node_embeddings, cyclic_embeddings = self.encoder(batch)  # (B, N, E), (B, N, E)
 
         # 2. MambaBlock: get per-node score vectors
-        mamba_feats = self.model(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))   # (B, N, model_dim)
+        mamba_feats = self.model(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))   # (B, N, 2M)
 
         # 3. ScoreHead: get score matrix (tour)
         score_matrix = self.score_constructor(mamba_feats, cyclic_embeddings)  # (B, N, N)

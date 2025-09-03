@@ -11,16 +11,14 @@ class EmbeddingNet(nn.Module):
     Embedding Network for node features.
     Performs node feature embedding and cyclic positional encoding.
     """
-    def __init__(self, node_dim: int, embedding_dim: int, k: int, device: torch.device, alpha: float):
+    def __init__(self, input_dim: int, embedding_dim: int, num_harmonics: int, device: torch.device, alpha: float):
         super().__init__()
-        self.node_feature_encoder = nn.Linear(node_dim, embedding_dim, bias=False)  # Linear layer for node feature embedding
-        self.cyclic_projection = nn.Linear(2 * k, embedding_dim, bias=False)  # Linear layer to project harmonics to embedding_dim
+        self.node_feature_encoder = nn.Linear(input_dim, embedding_dim, bias=False)   # Linear layer for node feature embedding
+        self.cyclic_projection = nn.Linear(2 * num_harmonics, embedding_dim, bias=False)  # Linear layer to project harmonics to E
 
-        self.node_dim = node_dim            # Dimension of the initial node features
-        self.embedding_dim = embedding_dim  # Dimension of the embedding space
-        self.k = k                          # Number of harmonics
-        self.alpha = alpha                  # Scaling factor for frequency base
-        self.device = device                # Device for computation
+        self.k = num_harmonics  # Number of harmonics
+        self.alpha = alpha      # Scaling factor for frequency base
+        self.device = device    # Device for computation
 
     def cyclic_encoding(self, N: int):
         """
@@ -28,8 +26,8 @@ class EmbeddingNet(nn.Module):
         Args:
             N: Number of positions (tour length)
         Returns:
-            node feature embedding: A tensor of shape (batch, N, embedding_dim)
-            cyclic embedding: A tensor of shape (batch, N, embedding_dim)
+            node feature embedding: A tensor of shape (B, N, E)
+            cyclic embedding: A tensor of shape (B, N, E)
         """
         # tour phases: positions 0...N-1 [N]
         t = torch.arange(N, device=self.device, dtype=torch.float32)
@@ -51,13 +49,13 @@ class EmbeddingNet(nn.Module):
             feats: (batch, N, embedding_dim * 2) - concatenated node and cyclic embeddings
         """
         # Node Feature Embedding
-        x_norm = F.layer_norm(x, (x.shape[-1],))  # [B, N, node_dim]
-        nfe = self.node_feature_encoder(x_norm)  # [B, N, embedding_dim]
+        x_norm = F.layer_norm(x, (x.shape[-1],))  # [B, N, I]
+        nfe = self.node_feature_encoder(x_norm)  # [B, N, E]
 
         # Cyclic Embedding
         B, N, _ = x.shape
-        ce = self.cyclic_encoding(N).unsqueeze(0).repeat(B, 1, 1)  # [B, N, 2k]
-        ce = self.cyclic_projection(ce)  # [B, N, embedding_dim]
+        ce = self.cyclic_encoding(N).unsqueeze(0).repeat(B, 1, 1)  # [B, N, 2K]
+        ce = self.cyclic_projection(ce)  # [B, N, E]
 
         return nfe, ce
 
@@ -67,58 +65,67 @@ class MambaBlock(nn.Module):
     Mamba Block for the TSP model.
     Takes concatenated node and cyclic embeddings as input and outputs a score for each node.
     """
-    def __init__(self, input_dim, mamba_dim, hidden_dim, layers):
+    def __init__(self, mamba_model_size, mamba_hidden_state_size, mamba_layers):
         """
         Args:
-            input_dim: Dimension of concatenated embedding (node + cyclic)
-            mamba_dim: Model dimension for Mamba (d_model)
-            hidden_dim: SSM state expansion factor (d_state)
-            layers: Number of Mamba blocks stacked (min: 1)
+            mamba_model_size: Model dimension for Mamba (d_model), defined by input size
+            mamba_hidden_state_size: SSM state expansion factor (d_state)
+            mamba_layers: Number of Mamba blocks stacked (min: 1)
         """
         super(MambaBlock, self).__init__()
-        self.embedding_dim = input_dim  # Dimension of the input embeddings
-        self.mamba_dim = mamba_dim if mamba_dim else input_dim  # Mamba model dimension (d_model)
-        self.hidden_dim = hidden_dim    # Hidden dimension for Mamba
 
-        self.input_proj = nn.Linear(self.embedding_dim, self.mamba_dim) if self.embedding_dim != self.mamba_dim else None
-
-        self.mamba_layers = nn.ModuleList([
+        self.forward_block = nn.ModuleList([
             Mamba(
-                d_model=self.mamba_dim,   # Model dimension d_model
-                d_state=self.hidden_dim,  # SSM state expansion factor
-                d_conv=4,                 # Local convolution width
-                expand=2                  # Block expansion factor
-            ).to('cuda') for _ in range(layers)
+                d_model=mamba_model_size,         # Model dimension d_model
+                d_state=mamba_hidden_state_size,  # SSM state expansion factor
+                d_conv=4,                         # Local convolution width
+                expand=2                          # Block expansion factor
+            ).to('cuda') for _ in range(mamba_layers)
+        ])
+
+        self.backward_block = nn.ModuleList([
+            Mamba(
+                d_model=mamba_model_size,         # Model dimension d_model
+                d_state=mamba_hidden_state_size,  # SSM state expansion factor
+                d_conv=4,                         # Local convolution width
+                expand=2                          # Block expansion factor
+            ).to('cuda') for _ in range(mamba_layers)
         ])
 
     def forward(self, x):
         """
         Args:
-            x: (batch, N, embedding_dim)
+            x: (B, N, 2E)
         Returns:
-            node_feats: (batch, N, model_dim)
+            node_feats: (B, N, 4E)
         """
-        if self.input_proj is not None: # Project input to Mamba dimension (safety)
-            x = self.input_proj(x)
-        for mamba_block in self.mamba_layers:
-            x = mamba_block(x)
-        return x    # [B, N, mamba_dim]
+        # --- Forward Pass ---
+        x_fwd = x
+        for mamba_layer in self.forward_block:
+            x_fwd = mamba_layer(x_fwd)
+        # --- Backward Pass ---
+        x_bwd = torch.flip(x, dims=[1])  # Reverse sequence
+        for mamba_layer in self.backward_block:
+            x_bwd = mamba_layer(x_bwd)
+        x_bwd = torch.flip(x_bwd, dims=[1])  # Un-reverse to align
+        # --- Concatenate ---
+        return torch.cat([x_fwd, x_bwd], dim=-1)  # (B, N, 4E)
 
 
 class BilinearScoreHead(nn.Module):
     """
     Takes Mamba and cyclic features as input and builds a score matrix S for gumbel-sinkhorn soft permutation.
     Build S in [B x N x N] from:
-      E = mamba_features in [B x N x model_dim]
-      R = cyclic_feats    in [B x N x embedding_dim]
+      E = mamba_features in [B x N x 4E]
+      R = cyclic_feats    in [B x N x E]
       W = bilinear_weights in [d_head x d_head]
     via S = (E U_e) W (R U_r)^T
     """
-    def __init__(self, model_dim: int, embedding_dim: int, d_head: int = 128, bias: bool = True):
+    def __init__(self, model_vector_size: int, cycle_vector_size: int, score_head_dim: int = 128, bias: bool = True):
         super().__init__()
-        self.proj_e = nn.Linear(model_dim,    d_head, bias=False)  # U_e
-        self.proj_r = nn.Linear(embedding_dim, d_head, bias=False) # U_r
-        self.W      = nn.Parameter(torch.empty(d_head, d_head))    # bilinear core
+        self.proj_e = nn.Linear(model_vector_size, score_head_dim, bias=False)  # U_e
+        self.proj_r = nn.Linear(cycle_vector_size, score_head_dim, bias=False) # U_r
+        self.W      = nn.Parameter(torch.empty(score_head_dim, score_head_dim))    # bilinear core
         nn.init.xavier_uniform_(self.W)
 
         if bias:

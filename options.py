@@ -14,12 +14,11 @@ def get_options(args=None):
     parser.add_argument('--seed', type=int, default=1234, help='random seed to use')
     
     # Route-Mamba parameters
-    parser.add_argument('--problem_input_dim', type=int, default=2, help='input dimension of the problem nodes')
-    parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of input embeddings for each, NFE & CE, has to be even')
-    parser.add_argument('--harmonics', type=int, default=16, help='number of harmonics for cyclic positional encoding')
+    parser.add_argument('--input_dim', type=int, default=2, help='input dimension of the problem nodes')
+    parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of embeddings for each, NFE & CE, has to be even')
+    parser.add_argument('--num_harmonics', type=int, default=16, help='number of harmonics for cyclic positional encoding')
     parser.add_argument('--frequency_scaling', type=float, default=0.0, help='How the amplitude should decay for harmonics with larger frequencies (between 0 and 1)')
-    parser.add_argument('--model_dim', type=int, default=64, help='dimension of the mamba model (default equal to 2 * embedding_dim)')
-    parser.add_argument('--hidden_dim', type=int, default=128, help='dimension of hidden state representation in Mamba')
+    parser.add_argument('--mamba_hidden_dim', type=int, default=128, help='dimension of hidden state representation in Mamba')
     parser.add_argument('--mamba_layers', type=int, default=3, help='number of stacked Mamba blocks in the model')
     parser.add_argument('--score_head_dim', type=int, default=128, help='dimension of the bilinear score head to construct score matrix')
     parser.add_argument('--score_head_bias', type=bool, default=True, help='whether to use bias in score head')
