@@ -19,7 +19,7 @@
                                     # You must provide an absolute path eg /common/home/module/username/
                                     # If no paths are provided, the output file will be placed in your current working directory
 #SBATCH --requeue                   # Remove if you do not want the workload scheduler to requeue your job after preemption
-#SBATCH --constraint=skylake        # Constrain to skylake nodes
+#SBATCH --constraint=v100           # Constrain to Nvidia Tesla V100 GPUs
 
 ################################################################
 ## EDIT AFTER THIS LINE IF YOU ARE OKAY WITH DEFAULT SETTINGS ##
@@ -58,4 +58,4 @@ pip3 install -q torch torchvision torchaudio
 pip3 install -q mamba_ssm
 
 # Submit your job to the cluster
-srun --gres=gpu:1 python run.py
+srun --gres=gpu:1 python run.py --tour_heuristic random --tour_method hungarian --checkpoint_epochs 0

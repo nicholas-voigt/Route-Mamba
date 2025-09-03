@@ -1,11 +1,10 @@
 import os
 import torch
 from torch.utils.data import DataLoader
-from scipy.optimize import linear_sum_assignment
 
 from nets.actor_network import Actor
 from problems.tsp import TSP, TSPDataset
-from utils import greedy_initial_tour, check_feasibility, compute_soft_tour_length, compute_euclidean_tour
+from utils import get_initial_tours, check_feasibility, compute_euclidean_tour
 
 
 class SurrogateLoss:
@@ -108,16 +107,14 @@ class SurrogateLoss:
                 batch = {k: v.to(self.opts.device) for k, v in batch.items()}
                 coords = batch['coordinates']
 
-                # Create initial tour using greedy heuristic
-                initial_tours = greedy_initial_tour(coords)
+                # Create initial tour using specified heuristic (greedy or random)
+                initial_tours = get_initial_tours(coords, self.opts.tour_heuristic)
 
                 # Forward pass to get the straight-through permutation
                 st_perm = self.actor(initial_tours)
 
-                # Create the new tour using the permutation
+                # Create the new tour using the permutation & compute tour lengths
                 new_tours = torch.bmm(st_perm, initial_tours)
-
-                # Compute tour lengths
                 initial_tour_lengths = compute_euclidean_tour(initial_tours)
                 new_tour_lengths = compute_euclidean_tour(new_tours)
                 
@@ -155,7 +152,8 @@ class SurrogateLoss:
             )
             
             # Save model checkpoint
-            self.save(epoch=epoch, save_dir=self.opts.save_dir)
+            if self.opts.checkpoint_epochs and (epoch + 1) % self.opts.checkpoint_epochs == 0:
+                self.save(epoch=epoch, save_dir=self.opts.save_dir)
 
     def evaluate(self, problem: TSP):
         """
@@ -189,33 +187,21 @@ class SurrogateLoss:
                 batch = {k: v.to(self.opts.device) for k, v in batch.items()}
                 coords = batch['coordinates']
 
-                # 1. Create initial tour using greedy heuristic
-                batch_init = greedy_initial_tour(coords)  # (batch_size, seq_length, 2)
+                # 1. Create initial tour using specified heuristic (greedy or random)
+                initial_tours = get_initial_tours(coords, self.opts.tour_heuristic)
 
-                # 2. Forward pass: get soft tour and permutation
-                _, soft_perm = self.actor(batch_init)
+                # 2. Forward pass to get the straight-through permutation & check feasibility (sanity check)
+                st_perm = self.actor(initial_tours)
+                check_feasibility(st_perm)
 
-                # 3. Use Hungarian algorithm to extract hard permutation indices
-                batch_size, _, _ = soft_perm.size()
-                perm_indices = []
-                for i in range(batch_size):
-                    # Hungarian algorithm expects cost matrix, so use -soft_perm
-                    _, col_ind = linear_sum_assignment(-soft_perm[i].cpu().numpy())
-                    # col_ind gives the assignment for each row
-                    perm_indices.append(torch.tensor(col_ind, dtype=torch.long, device=coords.device))
-                perm_indices = torch.stack(perm_indices, dim=0)  # (batch_size, seq_length)
+                # 3. Create the new tour using the permutation & calculate tour lengths
+                new_tours = torch.bmm(st_perm, initial_tours)   # (B, N, 2)
+                new_tour_lengths = compute_euclidean_tour(new_tours)  # (B,)
 
-                # 4. Check feasibility
-                check_feasibility(perm_indices)
-
-                # 5. Reorder coordinates according to true permutation & compute tour length
-                ordered_coords = coords.gather(1, perm_indices.unsqueeze(-1).expand(-1, -1, 2))
-                tour_length = compute_soft_tour_length(ordered_coords)  # (batch_size,)
-
-                # 6. Accumulate statistics
-                total_length += tour_length.sum().item()
-                total_feasible += perm_indices.size(0)
-                total_samples += perm_indices.size(0)
+                # 4. Accumulate statistics
+                total_length += new_tour_lengths.sum().item()
+                total_feasible += new_tour_lengths.size(0)
+                total_samples += new_tour_lengths.size(0)
 
         avg_length = total_length / total_samples if total_samples > 0 else float('inf')
         print(f"Evaluation: Avg Tour Length: {avg_length:.4f} | Feasible Tours: {total_feasible}/{total_samples}")
