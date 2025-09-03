@@ -109,13 +109,10 @@ class SurrogateLoss:
 
                 # Create initial tour using specified heuristic (greedy or random)
                 initial_tours = get_initial_tours(coords, self.opts.tour_heuristic)
-
-                # Forward pass to get the straight-through permutation
-                st_perm = self.actor(initial_tours)
-
-                # Create the new tour using the permutation & compute tour lengths
-                new_tours = torch.bmm(st_perm, initial_tours)
                 initial_tour_lengths = compute_euclidean_tour(initial_tours)
+
+                # Forward pass to get the new tours
+                new_tours = self.actor(initial_tours)
                 new_tour_lengths = compute_euclidean_tour(new_tours)
                 
                 # Use the new tour length directly as the loss to minimize
