@@ -79,24 +79,28 @@ class SurrogateLoss:
         # Initialize Gumbel-Sinkhorn parameters
         anneal_rate = (self.opts.gs_tau_initial / self.opts.gs_tau_final) ** (1.0 / self.opts.n_epochs)
 
+        # prepare training data
+        training_dataset = problem.make_dataset(
+            size=self.opts.graph_size,
+            num_samples=self.opts.epoch_size
+        )
+        training_dataloader = DataLoader(
+            dataset=training_dataset,
+            batch_size=self.opts.batch_size,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=True
+        )
+
+        # Epoch training loop
         for epoch in range(self.opts.n_epochs):
-            # prepare training data
-            training_dataset = problem.make_dataset(
-                size=self.opts.graph_size,
-                num_samples=self.opts.epoch_size
-            )
-            training_dataloader = DataLoader(
-                dataset=training_dataset,
-                batch_size=self.opts.batch_size,
-                shuffle=False,
-                num_workers=0,
-                pin_memory=True
-            )
+
             # Initialize accumulators for logging
-            total_loss = 0
-            total_initial_length = 0
-            total_new_length = 0
+            epoch_loss = 0
+            epoch_initial_length = 0
+            epoch_new_length = 0
             num_samples = len(training_dataloader.dataset)  # type: ignore
+
             # Update Gumbel-Sinkhorn temperature
             self.actor.decoder.gs_tau = max(self.opts.gs_tau_final, self.actor.decoder.gs_tau / anneal_rate)
 
@@ -123,14 +127,14 @@ class SurrogateLoss:
                 self.optimizer.step()
 
                 # Accumulate metrics for logging
-                total_loss += loss.item() * coords.size(0)
-                total_initial_length += initial_tour_lengths.sum().item()
-                total_new_length += new_tour_lengths.sum().item()
+                epoch_loss += loss.item() * coords.size(0)
+                epoch_initial_length += initial_tour_lengths.sum().item()
+                epoch_new_length += new_tour_lengths.sum().item()
 
-            # 3. Calculate epoch averages and log them
-            avg_loss = total_loss / num_samples
-            avg_initial_length = total_initial_length / num_samples
-            avg_new_length = total_new_length / num_samples
+            # Calculate epoch averages and log them
+            avg_loss = epoch_loss / num_samples
+            avg_initial_length = epoch_initial_length / num_samples
+            avg_new_length = epoch_new_length / num_samples
 
             epoch_log = {
                 'epoch': epoch + 1,

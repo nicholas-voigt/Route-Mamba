@@ -8,12 +8,15 @@ def get_options(args=None):
     
     parser = argparse.ArgumentParser(description="Route-Mamba")
 
-    # Overall settings
+    # Problem settings
     parser.add_argument('--problem', default='tsp', choices = ['vrp', 'tsp'], help="the targeted problem to solve, default 'tsp'")
     parser.add_argument('--graph_size', type=int, default=100, help="the number of customers in the targeted problem (graph size)")
+    parser.add_argument('--problem_size', type=int, default=10000, help='number of problem instances for training')
+
     parser.add_argument('--seed', type=int, default=1234, help='random seed to use')
     
     # Route-Mamba parameters
+    parser.add_argument('--tour_heuristic', type=str, default='greedy', choices=['greedy', 'random'], help='Heuristic for initial tour construction')
     parser.add_argument('--input_dim', type=int, default=2, help='input dimension of the problem nodes')
     parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of embeddings for each, NFE & CE, has to be even')
     parser.add_argument('--num_harmonics', type=int, default=16, help='number of harmonics for cyclic positional encoding')
@@ -30,10 +33,8 @@ def get_options(args=None):
     # Training parameters
     parser.add_argument('--RL_agent', default='surrogate', choices = ['surrogate'], help='RL Training algorithm')
     parser.add_argument('--n_epochs', type=int, default=50, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=1000,help='number of instances per batch during training')
-    parser.add_argument('--epoch_size', type=int, default=10000, help='number of instances per epoch during training')
+    parser.add_argument('--batch_size', type=int, default=500,help='number of instances per batch during training')
     parser.add_argument('--lr_model', type=float, default=1e-4, help="learning rate for the actor network")
-    parser.add_argument('--tour_heuristic', type=str, default='greedy', choices=['greedy', 'random'], help='Heuristic for initial tour construction')
 
     # Inference and validation parameters
     parser.add_argument('--eval_only', action='store_true', help='switch to inference mode')
