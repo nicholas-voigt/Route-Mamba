@@ -16,7 +16,7 @@ def get_options(args=None):
     parser.add_argument('--seed', type=int, default=1234, help='random seed to use')
     
     # Route-Mamba parameters
-    parser.add_argument('--tour_heuristic', type=str, default='greedy', choices=['greedy', 'random'], help='Heuristic for initial tour construction')
+    parser.add_argument('--tour_heuristic', type=str, default='greedy', help='Heuristic for initial tour construction (greedy, random, farthest)')
     parser.add_argument('--input_dim', type=int, default=2, help='input dimension of the problem nodes')
     parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of embeddings for each, NFE & CE, has to be even')
     parser.add_argument('--num_harmonics', type=int, default=16, help='number of harmonics for cyclic positional encoding')

@@ -33,6 +33,38 @@ def greedy_initial_tour(batch: torch.Tensor):
     # Reorder original coordinates based on the computed route
     return batch.gather(1, route.unsqueeze(-1).expand(-1, -1, 2))
 
+def farthest_initial_tour(batch: torch.Tensor):
+    """
+    Creates an initial tour for the TSP problem using a farthest neighbor heuristic.
+    Args:
+        batch: (B, N, 2) - coordinates of nodes
+    Returns: 
+        (B, N, 2) - nodes in farthest order
+    """
+    B, N, _ = batch.size()
+    MIN = torch.finfo(batch.dtype).min
+    device = batch.device
+    # Calculate full pairwise distance matrix (B, N, N)
+    dist_matrix = torch.linalg.vector_norm(batch.unsqueeze(2) - batch.unsqueeze(1), dim=-1)
+    # Initialize tour and masks
+    route = torch.zeros(B, N, dtype=torch.long, device=device)
+    visited_mask = torch.ones(B, N, dtype=torch.bool, device=device)
+    # Select start at node (0) for all instances in the batch
+    current_node = torch.zeros(B, dtype=torch.long, device=device)
+    route[:, 0] = current_node
+    visited_mask[torch.arange(B), current_node] = False
+    # Build tour iteratively
+    for i in range(1, N):
+        # Get distances from the current node to all other nodes & mask out visited
+        current_dists = dist_matrix[torch.arange(B), current_node]
+        current_dists[~visited_mask] = MIN
+        # Find the farthest unvisited node & update route and mask
+        current_node = torch.argmax(current_dists, dim=1)
+        route[:, i] = current_node
+        visited_mask[torch.arange(B), current_node] = False
+    # Reorder original coordinates based on the computed route
+    return batch.gather(1, route.unsqueeze(-1).expand(-1, -1, 2))
+
 def random_initial_tour(batch: torch.Tensor):
     """
     Creates a random initial tour for the TSP problem.
@@ -54,7 +86,7 @@ def get_initial_tours(batch: torch.Tensor, method: str):
     Generate initial tours for a batch of TSP instances.
     Args:
         batch: (B, N, 2) - coordinates of nodes
-        method: str - method to use for generating initial tours (greedy, random)
+        method: str - method to use for generating initial tours (greedy, random, farthest)
     Returns:
         (B, N, 2) - initial tours
     """
@@ -62,6 +94,8 @@ def get_initial_tours(batch: torch.Tensor, method: str):
         return greedy_initial_tour(batch)
     elif method == "random":
         return random_initial_tour(batch)
+    elif method == "farthest":
+        return farthest_initial_tour(batch)
     else:
         raise ValueError(f"Unknown method: {method}")
 
