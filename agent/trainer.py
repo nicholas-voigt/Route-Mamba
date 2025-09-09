@@ -115,8 +115,7 @@ class SurrogateLoss:
                 initial_tour_lengths = compute_euclidean_tour(initial_tours)
 
                 # Forward pass to get the new tours
-                st_perm = self.actor(initial_tours)
-                new_tours = torch.bmm(st_perm.transpose(1, 2), coords)  # (B, N, I)
+                new_tours = self.actor(initial_tours)
                 new_tour_lengths = compute_euclidean_tour(new_tours)
                 
                 # Use the new tour length directly as the loss to minimize
@@ -188,18 +187,18 @@ class SurrogateLoss:
                 batch = {k: v.to(self.opts.device) for k, v in batch.items()}
                 coords = batch['coordinates']
 
-                # Create initial tour using specified heuristic (greedy or random)
+                # 1. Create initial tour using specified heuristic (greedy or random)
                 initial_tours = get_initial_tours(coords, self.opts.tour_heuristic)
 
-                # Forward pass to get the straight-through permutation & check feasibility (sanity check)
+                # 2. Forward pass to get the straight-through permutation & check feasibility (sanity check)
                 st_perm = self.actor(initial_tours)
-                new_tours = torch.bmm(st_perm.transpose(1, 2), coords)  # (B, N, I)
-                new_tour_lengths = compute_euclidean_tour(new_tours)
-
-                # Check feasibility of the straight-through permutation
                 check_feasibility(st_perm)
 
-                # Accumulate statistics
+                # 3. Create the new tour using the permutation & calculate tour lengths
+                new_tours = torch.bmm(st_perm, initial_tours)   # (B, N, 2)
+                new_tour_lengths = compute_euclidean_tour(new_tours)  # (B,)
+
+                # 4. Accumulate statistics
                 total_length += new_tour_lengths.sum().item()
                 total_feasible += new_tour_lengths.size(0)
                 total_samples += new_tour_lengths.size(0)
