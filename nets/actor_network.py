@@ -54,6 +54,9 @@ class Actor(nn.Module):
         # 4. ValueDecoder: get soft permutation matrix (tour)
         soft_perm = self.decoder(score_matrix)  # (B, N, N)
 
-        # 5. Compute new tour via straight-through permutation
-        new_tours = torch.bmm(self.tour_constructor(soft_perm), batch)  # (B, N, I)
+        # 5. Get the straight-through permutation matrix
+        st_perm = self.tour_constructor(soft_perm)
+
+        # 6. Compute new tour via straight-through permutation
+        new_tours = torch.bmm(st_perm.transpose(1, 2), batch)  # (B, N, I)
         return new_tours
