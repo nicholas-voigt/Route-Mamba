@@ -82,7 +82,7 @@ class SurrogateLoss:
         # prepare training data
         training_dataset = problem.make_dataset(
             size=self.opts.graph_size,
-            num_samples=self.opts.epoch_size
+            num_samples=self.opts.problem_size
         )
         training_dataloader = DataLoader(
             dataset=training_dataset,
