@@ -44,21 +44,16 @@ class Actor(nn.Module):
         """
         # 1. Encode node features (and cyclic encoding)
         node_embeddings, cyclic_embeddings = self.encoder(batch)  # (B, N, E), (B, N, E)
-        print("Node embeddings shape:", node_embeddings.shape)
-        print("Cyclic embeddings shape:", cyclic_embeddings.shape)
+
         # 2. MambaBlock: get per-node score vectors
         mamba_feats = self.model(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))   # (B, N, 2M)
-        print("Mamba features shape:", mamba_feats.shape)
+
         # 3. ScoreHead: get score matrix (tour)
         score_matrix = self.score_constructor(mamba_feats, cyclic_embeddings)  # (B, N, N)
-        print("Score matrix shape:", score_matrix.shape)
+
         # 4. ValueDecoder: get soft permutation matrix (tour)
         soft_perm = self.decoder(score_matrix)  # (B, N, N)
-        print("Soft permutation shape:", soft_perm.shape)
-        print("Soft permutation:", soft_perm)
+
         # 5. Compute new tour via straight-through permutation
-        st_perm = self.tour_constructor(soft_perm)
-        print("Straight-through permutation shape:", st_perm.shape)
-        print("Straight-through permutation:", st_perm)
-        new_tours = torch.bmm(st_perm, batch)  # (B, N, I)
+        new_tours = torch.bmm(self.tour_constructor(soft_perm), batch)  # (B, N, I)
         return new_tours
