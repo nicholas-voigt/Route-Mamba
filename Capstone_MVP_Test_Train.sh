@@ -58,4 +58,4 @@ pip3 install -q torch torchvision torchaudio
 pip3 install -q mamba_ssm
 
 # Submit your job to the cluster
-srun --gres=gpu:1 python run.py --graph_size 20 --n_epochs 1 --batch_size 5 --epoch_size 5 --tour_heuristic random --tour_method hungarian
+srun --gres=gpu:1 python run.py --graph_size 20 --n_epochs 1 --batch_size 10 --epoch_size 20 --tour_heuristic random --tour_method hungarian
