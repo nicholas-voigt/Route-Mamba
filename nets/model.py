@@ -155,6 +155,40 @@ class BilinearScoreHead(nn.Module):
         return S
 
 
+class AttentionScoreHead(nn.Module):
+    """
+    Takes Mamba and cyclic features as input and builds a score matrix S for gumbel-sinkhorn soft permutation.
+    Build S in [B x N x N] using multi-head attention from the Mamba features in [B x N x 4E].
+    Score S[i, j] = attention score of node i attending to position j.
+    """
+    def __init__(self, model_vector_size: int, num_heads: int):
+        super().__init__()
+        self.num_heads = num_heads
+        # Multi-head attention layer (pyTorch implementation), query=nodes, key=positions
+        self.attention = nn.MultiheadAttention(
+            embed_dim=model_vector_size, 
+            num_heads=num_heads, 
+            batch_first=True
+        )
+    
+    def forward(self, mamba_features: torch.Tensor) -> torch.Tensor:
+        """
+        Perform self attention on Mamba features to get score matrix S.
+        Args:
+            mamba_features: [B, N, model_dim] - rich node features including context
+        Returns:
+            S: [B, N, N] (rows = nodes i, cols = positions j)
+        """
+        _, attn_weights = self.attention(
+            query=mamba_features, 
+            key=mamba_features, 
+            value=mamba_features,
+            need_weights=True,
+            average_attn_weights=True
+        )
+        return attn_weights  # [B, N, N] (rows = nodes i, cols = positions j)
+    
+
 class GumbelSinkhornDecoder(nn.Module):
     """
     Takes score matrix [B, N, N] as input,

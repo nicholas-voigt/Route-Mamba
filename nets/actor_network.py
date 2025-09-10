@@ -1,12 +1,12 @@
 import torch
 from torch import nn
 
-from nets.model import EmbeddingNet, MambaBlock, GumbelSinkhornDecoder, BilinearScoreHead, TourConstructor
+from nets.model import EmbeddingNet, MambaBlock, GumbelSinkhornDecoder, AttentionScoreHead, TourConstructor
 
 
 class Actor(nn.Module):
     def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers, 
-                 score_head_dim, score_head_bias, gs_tau, gs_iters, method, device):
+                 num_attention_heads, gs_tau, gs_iters, method, device):
         super().__init__()
 
         self.encoder = EmbeddingNet(
@@ -21,11 +21,9 @@ class Actor(nn.Module):
             mamba_hidden_state_size = mamba_hidden_dim,
             mamba_layers = mamba_layers
         )
-        self.score_constructor = BilinearScoreHead(
+        self.score_constructor = AttentionScoreHead(
             model_vector_size = 4 * embedding_dim,
-            cycle_vector_size = embedding_dim,
-            score_head_dim = score_head_dim,
-            bias = score_head_bias
+            num_heads = num_attention_heads
         )
         self.decoder = GumbelSinkhornDecoder(
             gs_tau = gs_tau,
@@ -49,7 +47,7 @@ class Actor(nn.Module):
         mamba_feats = self.model(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))   # (B, N, 2M)
 
         # 3. ScoreHead: get score matrix (tour)
-        score_matrix = self.score_constructor(mamba_feats, cyclic_embeddings)  # (B, N, N)
+        score_matrix = self.score_constructor(mamba_feats)  # (B, N, N)
 
         # 4. ValueDecoder: get soft permutation matrix (tour)
         soft_perm = self.decoder(score_matrix)  # (B, N, N)
