@@ -83,13 +83,6 @@ class SurrogateLoss:
             size=self.opts.graph_size,
             num_samples=self.opts.problem_size
         )
-        training_dataloader = DataLoader(
-            dataset=training_dataset,
-            batch_size=self.opts.batch_size,
-            shuffle=False,
-            num_workers=0,
-            pin_memory=True
-        )
 
         # Epoch training loop
         for epoch in range(self.opts.n_epochs):
@@ -98,13 +91,19 @@ class SurrogateLoss:
             epoch_loss = 0
             epoch_initial_length = 0
             epoch_new_length = 0
-            num_samples = len(training_dataloader.dataset)  # type: ignore
+            num_samples = len(training_dataset)
 
             # Update Gumbel-Sinkhorn temperature
             self.actor.decoder.gs_tau = max(self.opts.gs_tau_final, self.actor.decoder.gs_tau / anneal_rate)
 
             # Batch training loop
-            for batch in training_dataloader:
+            for batch in DataLoader(
+                dataset=training_dataset,
+                batch_size=self.opts.batch_size,
+                shuffle=False,
+                num_workers=0,
+                pin_memory=True
+            ):
                 self.actor.train()
                 batch = {k: v.to(self.opts.device) for k, v in batch.items()}
                 coords = batch['coordinates']
