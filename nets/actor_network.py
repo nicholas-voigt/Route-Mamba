@@ -22,8 +22,11 @@ class Actor(nn.Module):
             mamba_layers = mamba_layers
         )
         self.score_constructor = AttentionScoreHead(
-            model_vector_size = 4 * embedding_dim,
-            num_heads = num_attention_heads
+            model_dim = 4 * embedding_dim,
+            num_heads = num_attention_heads,
+            ffn_expansion = 4,
+            dropout = 0.1,
+            num_layers = 2
         )
         self.decoder = GumbelSinkhornDecoder(
             gs_tau = gs_tau,

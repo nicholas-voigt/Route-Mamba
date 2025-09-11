@@ -155,39 +155,83 @@ class BilinearScoreHead(nn.Module):
         return S
 
 
-class AttentionScoreHead(nn.Module):
+class EncoderLayer(nn.Module):
     """
-    Takes Mamba and cyclic features as input and builds a score matrix S for gumbel-sinkhorn soft permutation.
-    Build S in [B x N x N] using multi-head attention from the Mamba features in [B x N x 4E].
-    Score S[i, j] = attention score of node i attending to position j.
+    A standard Transformer Encoder Layer.
+    It consists of a Multi-Head Self-Attention mechanism followed by a Feed-Forward Network.
+    LayerNorm and residual connections are used for stabilization.
     """
-    def __init__(self, model_vector_size: int, num_heads: int):
+    def __init__(self, model_dim: int, num_heads: int, ffn_expansion: int, dropout: float):
         super().__init__()
-        self.num_heads = num_heads
-        # Multi-head attention layer (pyTorch implementation), query=nodes, key=positions
         self.attention = nn.MultiheadAttention(
-            embed_dim=model_vector_size, 
-            num_heads=num_heads, 
+            embed_dim=model_dim,
+            num_heads=num_heads,
+            dropout=dropout,
             batch_first=True
         )
-    
-    def forward(self, mamba_features: torch.Tensor) -> torch.Tensor:
+        self.ffn = nn.Sequential(
+            nn.Linear(model_dim, model_dim * ffn_expansion),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(model_dim * ffn_expansion, model_dim)
+        )
+        self.norm1 = nn.LayerNorm(model_dim)
+        self.norm2 = nn.LayerNorm(model_dim)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+
+    def forward(self, node_features: torch.Tensor) -> torch.Tensor:
+        # 1. Self-Attention block
+        attn_output, _ = self.attention(node_features, node_features, node_features)
+        # Residual connection and LayerNorm
+        node_features = self.norm1(node_features + self.dropout1(attn_output))
+
+        # 2. Feed-Forward block
+        ffn_output = self.ffn(node_features)
+        # Residual connection and LayerNorm
+        node_features = self.norm2(node_features + self.dropout2(ffn_output))
+        
+        return node_features
+
+
+class AttentionScoreHead(nn.Module):
+    """
+    Takes Mamba features as input, processes them through Transformer-style Encoder layers,
+    and then projects them to a final score matrix S in [B x N x N].
+    """
+    def __init__(self, model_dim: int, num_heads: int, ffn_expansion: int, dropout: float, num_layers: int):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            EncoderLayer(
+                model_dim=model_dim,
+                num_heads=num_heads,
+                ffn_expansion=ffn_expansion,
+                dropout=dropout
+            ) for _ in range(num_layers)
+        ])
+        self.projection = nn.Linear(model_dim, model_dim)  # Final projection to score matrix dimension
+
+    def forward(self, node_features: torch.Tensor) -> torch.Tensor:
         """
         Perform self attention on Mamba features to get score matrix S.
         Args:
             mamba_features: [B, N, model_dim] - rich node features including context
         Returns:
-            S: [B, N, N] (rows = nodes i, cols = positions j)
+            Score Matrix: [B, N, N]
         """
-        _, attn_weights = self.attention(
-            query=mamba_features, 
-            key=mamba_features, 
-            value=mamba_features,
-            need_weights=True,
-            average_attn_weights=True
-        )
-        return attn_weights  # [B, N, N] (rows = nodes i, cols = positions j)
-    
+        # Pass features through the encoder layers for refinement
+        refined_features = node_features
+        for layer in self.layers:
+            refined_features = layer(refined_features)
+
+        # Project the refined features to get query and key for score calculation
+        query = self.projection(refined_features)   # [B, N, model_dim]
+        key = self.projection(refined_features)     # [B, N, model_dim]
+
+        # Calculate final score matrix via dot product
+        scores = torch.matmul(query, key.transpose(1, 2))  # [B, N, N]
+        return scores
+
 
 class GumbelSinkhornDecoder(nn.Module):
     """
