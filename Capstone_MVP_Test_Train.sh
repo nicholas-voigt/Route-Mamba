@@ -8,7 +8,7 @@
 #################################################
 
 #SBATCH --nodes=1                   # How many nodes required? Usually 1
-#SBATCH --cpus-per-task=1           # Number of CPU to request for the job
+#SBATCH --cpus-per-task=4           # Number of CPU to request for the job
 #SBATCH --mem=12GB                  # How much memory does your job require?
 #SBATCH --gres=gpu:1                # Do you require GPUS? If not delete this line
 #SBATCH --time=00-02:00:00          # How long to run the job for? Jobs exceed this time will be terminated
