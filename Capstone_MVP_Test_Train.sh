@@ -18,7 +18,6 @@
 #SBATCH --output=logs/%u.%j.out     # Where should the log files go?
                                     # You must provide an absolute path eg /common/home/module/username/
                                     # If no paths are provided, the output file will be placed in your current working directory
-#SBATCH --requeue                   # Remove if you do not want the workload scheduler to requeue your job after preemption
 #SBATCH --constraint=skylake        # Constrain to Nvidia Tesla V100 Skylake GPUs
 
 ################################################################
@@ -58,4 +57,4 @@ pip3 install -q torch torchvision torchaudio
 pip3 install -q mamba_ssm
 
 # Submit your job to the cluster
-srun --gres=gpu:1 python run.py --graph_size 20 --tour_heuristic random --tour_method greedy --lr_model 1e-3
+srun --gres=gpu:1 python run.py --graph_size 20 --tour_heuristic random --tour_method greedy --lr_model 1e-3 --n_epochs 10
