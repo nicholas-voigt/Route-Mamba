@@ -116,7 +116,7 @@ class SurrogateLoss:
                 new_tour_lengths = compute_euclidean_tour(new_tours)
                 
                 # Use the new tour length directly as the loss to minimize
-                loss = new_tour_lengths.mean()
+                loss = new_tour_lengths.mean() * 100  # Apply loss scaling
 
                 # Optimize
                 self.optimizer.zero_grad()
