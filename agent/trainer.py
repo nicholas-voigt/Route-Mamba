@@ -121,6 +121,29 @@ class SurrogateLoss:
                 # Optimize
                 self.optimizer.zero_grad()
                 loss.backward()
+
+                # --- GRADIENT CHECK SNIPPET 1 ---
+                # Add this check only for the first batch of the first epoch for a quick test
+                if epoch == 0 and 'coordinates' in batch and coords.size(0) > 0 and not hasattr(self, '_checked_grads'):
+                    print("\n--- Gradient Existence Check ---")
+                    found_grad = 0
+                    grads = {}
+                    for name, param in self.actor.named_parameters():
+                        grads[name] = param.grad
+                        if param.grad is None:
+                            print(f"NO GRADIENT for: {name}")
+                        else:
+                            found_grad += 1
+                    if found_grad == 0:
+                        print("!!! CRITICAL: No gradients were found for any parameter. !!!")
+                    else:
+                        print(f"--- Gradients exist for {found_grad} parameters from a total of {len(grads)}. ---")
+                    
+                    print(grads)
+                    print("--- End of Gradient Check ---\n")
+                    self._checked_grads = True # Ensure this only runs once
+                # --- END SNIPPET ---
+
                 self.optimizer.step()
 
                 # Accumulate metrics for logging
