@@ -11,28 +11,26 @@ class EmbeddingNet(nn.Module):
     Embedding Network for node features.
     Performs node feature embedding and cyclic positional encoding.
     """
-    def __init__(self, input_dim: int, embedding_dim: int, num_harmonics: int, device: torch.device, alpha: float):
+    def __init__(self, input_dim: int, embedding_dim: int, num_harmonics: int, alpha: float):
         super().__init__()
         self.node_feature_encoder = nn.Linear(input_dim, embedding_dim, bias=False)   # Linear layer for node feature embedding
-        self.cyclic_projection = nn.Linear(2 * num_harmonics, embedding_dim, bias=False)  # Linear layer to project harmonics to E
-
+        self.cyclic_projection = nn.Linear(2 * num_harmonics, embedding_dim, bias=False)  # Linear layer to project harmonics to Embedding space
         self.k = num_harmonics  # Number of harmonics
         self.alpha = alpha      # Scaling factor for frequency base
-        self.device = device    # Device for computation
 
-    def cyclic_encoding(self, N: int):
+    def cyclic_encoding(self, N: int, device: torch.device):
         """
         Cyclic embedding which incorporates relative positional information.
         Args:
             N: Number of positions (tour length)
+            device: Device to create the tensor on
         Returns:
-            node feature embedding: A tensor of shape (B, N, E)
             cyclic embedding: A tensor of shape (B, N, E)
         """
         # tour phases: positions 0...N-1 [N]
-        t = torch.arange(N, device=self.device, dtype=torch.float32)
+        t = torch.arange(N, device=device, dtype=torch.float32)
         # integer harmonics for exact periodicity [k]
-        h = torch.arange(1, self.k + 1, device=self.device, dtype=torch.float32)
+        h = torch.arange(1, self.k + 1, device=device, dtype=torch.float32)
         # map angles on radian
         angles = 2 * math.pi * (t[:, None] * h[None, :] / N)  # [N, k]
         # interleave sin/cos & decay amplitudes for higher frequencies
@@ -48,15 +46,13 @@ class EmbeddingNet(nn.Module):
         Returns:
             feats: (batch, N, embedding_dim * 2) - concatenated node and cyclic embeddings
         """
+        B, N, _ = x.shape
         # Node Feature Embedding
         x_norm = F.layer_norm(x, (x.shape[-1],))  # [B, N, I]
         nfe = self.node_feature_encoder(x_norm)  # [B, N, E]
-
         # Cyclic Embedding
-        B, N, _ = x.shape
-        ce = self.cyclic_encoding(N).unsqueeze(0).repeat(B, 1, 1)  # [B, N, 2K]
+        ce = self.cyclic_encoding(N, x.device).unsqueeze(0).repeat(B, 1, 1)  # [B, N, 2K]
         ce = self.cyclic_projection(ce)  # [B, N, E]
-
         return nfe, ce
 
 
@@ -80,7 +76,7 @@ class MambaBlock(nn.Module):
                 d_state=mamba_hidden_state_size,  # SSM state expansion factor
                 d_conv=4,                         # Local convolution width
                 expand=2                          # Block expansion factor
-            ).to('cuda') for _ in range(mamba_layers)
+            ) for _ in range(mamba_layers)
         ])
 
         self.backward_block = nn.ModuleList([
@@ -89,7 +85,7 @@ class MambaBlock(nn.Module):
                 d_state=mamba_hidden_state_size,  # SSM state expansion factor
                 d_conv=4,                         # Local convolution width
                 expand=2                          # Block expansion factor
-            ).to('cuda') for _ in range(mamba_layers)
+            ) for _ in range(mamba_layers)
         ])
 
     def forward(self, x):
@@ -245,7 +241,7 @@ class GumbelSinkhornDecoder(nn.Module):
         self.gs_iters = gs_iters
 
     # ---- Gumbel noise sampling ----
-    def sample_gumbel(self, shape, eps=1e-20, device=None):
+    def sample_gumbel(self, shape, eps, device: torch.device):
         U = torch.rand(shape, device=device)
         return -torch.log(-torch.log(U + eps) + eps)
 
@@ -265,7 +261,7 @@ class GumbelSinkhornDecoder(nn.Module):
             soft permutation matrix [B, N, N]
         """
         # Add Gumbel noise
-        gumbel_noise = self.sample_gumbel(scores.shape, device=scores.device)
+        gumbel_noise = self.sample_gumbel(scores.shape, 1e-20, scores.device)
         scores = (scores + gumbel_noise) / self.gs_tau
         # Sinkhorn normalization to get doubly stochastic matrix
         soft_perm = self.sinkhorn(scores)

@@ -22,7 +22,6 @@ class SurrogateLoss:
             gs_tau = opts.gs_tau_initial,
             gs_iters = opts.gs_iters,
             method = opts.tour_method,
-            device = opts.device
         ).to(opts.device)
         # Initialize optimizer
         self.optimizer = torch.optim.Adam(

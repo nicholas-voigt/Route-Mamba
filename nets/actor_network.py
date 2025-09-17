@@ -6,14 +6,13 @@ from nets.model import EmbeddingNet, MambaBlock, GumbelSinkhornDecoder, Attentio
 
 class Actor(nn.Module):
     def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers, 
-                 num_attention_heads, gs_tau, gs_iters, method, device):
+                 num_attention_heads, gs_tau, gs_iters, method):
         super().__init__()
 
         self.encoder = EmbeddingNet(
             input_dim = input_dim,
             embedding_dim = embedding_dim,
             num_harmonics = num_harmonics,
-            device = device,
             alpha = frequency_scaling
         )
         self.model = MambaBlock(
