@@ -57,37 +57,54 @@ class EmbeddingNet(nn.Module):
 
 class MambaBlock(nn.Module):
     """
-    Mamba Block for the TSP model.
+    Single Mamba Block for the TSP model. Designed with reference to the Attention Encoder Layer.
+    Applies Pre-LN: LayerNorm -> Mamba -> Dropout -> Residual
     Takes concatenated node and cyclic embeddings as input and outputs a score for each node.
     """
-    def __init__(self, mamba_model_size, mamba_hidden_state_size, mamba_layers):
+    def __init__(self, mamba_model_size: int, mamba_hidden_state_size: int, dropout: float):
+        super().__init__()
+        self.mamba = Mamba(
+            d_model=mamba_model_size,
+            d_state=mamba_hidden_state_size,
+            d_conv=4,
+            expand=2
+        )
+        self.norm = nn.LayerNorm(mamba_model_size)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Pre-Mamba-Normalization
+        normalized_x = self.norm(x)
+        # Mamba Layer
+        mamba_output = self.mamba(normalized_x)
+        # Residual connection
+        x = x + self.dropout(mamba_output)
+        return x
+
+
+class BidirectionalMambaEncoder(nn.Module):
+    """
+    Mamba Implementation for the TSP model.
+    Takes concatenated node and cyclic embeddings as input and outputs a score for each node.
+    """
+    def __init__(self, mamba_model_size: int, mamba_hidden_state_size: int, dropout: float, mamba_layers: int):
         """
         Args:
             mamba_model_size: Model dimension for Mamba (d_model), defined by input size
             mamba_hidden_state_size: SSM state expansion factor (d_state)
             mamba_layers: Number of Mamba blocks stacked (min: 1)
         """
-        super(MambaBlock, self).__init__()
+        super().__init__()
 
         self.forward_block = nn.ModuleList([
-            Mamba(
-                d_model=mamba_model_size,         # Model dimension d_model
-                d_state=mamba_hidden_state_size,  # SSM state expansion factor
-                d_conv=4,                         # Local convolution width
-                expand=2                          # Block expansion factor
-            ) for _ in range(mamba_layers)
+            MambaBlock(mamba_model_size, mamba_hidden_state_size, dropout) for _ in range(mamba_layers)
         ])
 
         self.backward_block = nn.ModuleList([
-            Mamba(
-                d_model=mamba_model_size,         # Model dimension d_model
-                d_state=mamba_hidden_state_size,  # SSM state expansion factor
-                d_conv=4,                         # Local convolution width
-                expand=2                          # Block expansion factor
-            ) for _ in range(mamba_layers)
+            MambaBlock(mamba_model_size, mamba_hidden_state_size, dropout) for _ in range(mamba_layers)
         ])
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
             x: (B, N, 2E)
@@ -150,11 +167,10 @@ class BilinearScoreHead(nn.Module):
         return S
 
 
-class EncoderLayer(nn.Module):
+class AttentionScoreHead(nn.Module):
     """
-    A standard Transformer Encoder Layer.
-    It consists of a Multi-Head Self-Attention mechanism followed by a Feed-Forward Network.
-    LayerNorm and residual connections are used for stabilization.
+    Takes Mamba features as input, processes them through one Transformer-style Encoder layer,
+    and then projects them to a final score matrix S in [B x N x N].
     """
     def __init__(self, model_dim: int, num_heads: int, ffn_expansion: int, dropout: float):
         super().__init__()
@@ -170,43 +186,14 @@ class EncoderLayer(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(model_dim * ffn_expansion, model_dim)
         )
-        self.norm1 = nn.LayerNorm(model_dim)
-        self.norm2 = nn.LayerNorm(model_dim)
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
+        self.attn_norm = nn.LayerNorm(model_dim)
+        self.attn_dropout = nn.Dropout(dropout)
+        self.ffn_norm = nn.LayerNorm(model_dim)
+        self.ffn_dropout = nn.Dropout(dropout)
 
-    def forward(self, node_features: torch.Tensor) -> torch.Tensor:
-        # 1. Self-Attention block
-        attn_output, _ = self.attention(node_features, node_features, node_features)
-        # Residual connection and LayerNorm
-        node_features = self.norm1(node_features + self.dropout1(attn_output))
-
-        # 2. Feed-Forward block
-        ffn_output = self.ffn(node_features)
-        # Residual connection and LayerNorm
-        node_features = self.norm2(node_features + self.dropout2(ffn_output))
-        
-        return node_features
-
-
-class AttentionScoreHead(nn.Module):
-    """
-    Takes Mamba features as input, processes them through Transformer-style Encoder layers,
-    and then projects them to a final score matrix S in [B x N x N].
-    """
-    def __init__(self, model_dim: int, num_heads: int, ffn_expansion: int, dropout: float, num_layers: int):
-        super().__init__()
-        self.layers = nn.ModuleList([
-            EncoderLayer(
-                model_dim=model_dim,
-                num_heads=num_heads,
-                ffn_expansion=ffn_expansion,
-                dropout=dropout
-            ) for _ in range(num_layers)
-        ])
         self.projection = nn.Linear(model_dim, model_dim)  # Final projection to score matrix dimension
 
-    def forward(self, node_features: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Perform self attention on Mamba features to get score matrix S.
         Args:
@@ -214,16 +201,22 @@ class AttentionScoreHead(nn.Module):
         Returns:
             Score Matrix: [B, N, N]
         """
-        # Pass features through the encoder layers for refinement
-        refined_features = node_features
-        for layer in self.layers:
-            refined_features = layer(refined_features)
-
-        # Project the refined features to get query and key for score calculation
-        query = self.projection(refined_features)   # [B, N, model_dim]
-        key = self.projection(refined_features)     # [B, N, model_dim]
-
-        # Calculate final score matrix via dot product
+        # Pre-Attention-Normalization
+        normalized_x = self.attn_norm(x)
+        # Multi-Head Self-Attention
+        attn_output, _ = self.attention(normalized_x, normalized_x, normalized_x)
+        # Residual connection
+        x = x + self.attn_dropout(attn_output)
+        # Pre-Feed-Forward-Normalization
+        normalized_x = self.ffn_norm(x)
+        # Feed-Forward Network
+        ffn_output = self.ffn(normalized_x)
+        # Residual connection
+        x = x + self.ffn_dropout(ffn_output)
+        # Feature projection to get query and key for score calculation
+        query = self.projection(x)   # [B, N, model_dim]
+        key = self.projection(x)     # [B, N, model_dim]
+        # Score matrix calculation via dot product
         scores = torch.matmul(query, key.transpose(1, 2))  # [B, N, N]
         return scores
 
