@@ -127,9 +127,9 @@ class SurrogateLoss:
                 if epoch == 0 and 'coordinates' in batch and coords.size(0) > 0 and not hasattr(self, '_checked_grads'):
                     print("\n--- Gradient Existence Check ---")
                     found_grad = 0
-                    grads = {}
+                    total_params = 0
                     for name, param in self.actor.named_parameters():
-                        grads[name] = param.grad
+                        total_params += 1
                         if param.grad is None:
                             print(f"NO GRADIENT for: {name}")
                         else:
@@ -137,11 +137,19 @@ class SurrogateLoss:
                     if found_grad == 0:
                         print("!!! CRITICAL: No gradients were found for any parameter. !!!")
                     else:
-                        print(f"--- Gradients exist for {found_grad} parameters from a total of {len(grads)}. ---")
-                    
-                    print(grads)
+                        print(f"--- Gradients exist for {found_grad} parameters from a total of {total_params}. ---")
                     print("--- End of Gradient Check ---\n")
                     self._checked_grads = True # Ensure this only runs once
+                # --- END SNIPPET ---
+                # --- GRADIENT CHECK SNIPPET 2 ---
+                # This can be logged periodically
+                if epoch % 5 == 0 and 'coordinates' in batch and coords.size(0) > 0 and not hasattr(self, '_checked_grad_norm'):
+                    print("\n--- Gradient Norm Check ---")
+                    for name, param in self.actor.named_parameters():
+                        if param.grad is not None:
+                            grad_norm = param.grad.data.norm(2).item()
+                            print(f"Gradient norm for {name}: {grad_norm:.4f}")
+                    self._checked_grad_norm = True # Reset this if you want to see it every 5 epochs
                 # --- END SNIPPET ---
 
                 self.optimizer.step()
