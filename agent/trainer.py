@@ -85,7 +85,7 @@ class SurrogateLoss:
 
         # Epoch training loop
         for epoch in range(self.opts.n_epochs):
-
+            self._checked_grads = False # Reset gradient check flag each epoch
             # Initialize accumulators for logging
             epoch_loss = 0
             epoch_initial_length = 0
@@ -127,7 +127,7 @@ class SurrogateLoss:
                 )
 
                 # --- GRADIENT CHECK SNIPPET ---
-                if epoch % 5 == 0 and 'coordinates' in batch and coords.size(0) > 0:
+                if epoch % 5 == 0 and not self._checked_grads:
                     print("\n--- Gradient Existence Check ---")
                     found_grads = 0
                     vanishing_grads = 0
@@ -150,6 +150,7 @@ class SurrogateLoss:
                         for name, norm in grad_norms.items():
                             print(f"{name}: {norm:.6f}")
                     print("--- End of Gradient Check ---\n")
+                    self._checked_grads = True
                 # --- END SNIPPET ---
 
                 self.optimizer.step()
