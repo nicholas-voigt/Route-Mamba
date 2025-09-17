@@ -18,7 +18,7 @@
 #SBATCH --output=logs/%u.%j.out     # Where should the log files go?
                                     # You must provide an absolute path eg /common/home/module/username/
                                     # If no paths are provided, the output file will be placed in your current working directory
-#SBATCH --constraint="v100&skylake"  # Constrain to non-preemtable Nvidia Tesla V100 Skylake GPUs
+#SBATCH --constraint="skylake"      # Constrain to non-preemtable Nvidia Tesla V100 Skylake GPUs
 
 ################################################################
 ## EDIT AFTER THIS LINE IF YOU ARE OKAY WITH DEFAULT SETTINGS ##
