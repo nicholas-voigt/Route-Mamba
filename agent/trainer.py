@@ -106,16 +106,15 @@ class SurrogateLoss:
                 self.actor.train()
                 batch = {k: v.to(self.opts.device) for k, v in batch.items()}
                 coords = batch['coordinates']
-                # Test correct coordinate handling
-                print('First problem of batch:', coords[0], sep='\n')
+
                 # Create initial tour using specified heuristic (greedy or random)
                 initial_tours = get_initial_tours(coords, self.opts.tour_heuristic)
                 initial_tour_lengths = compute_euclidean_tour(initial_tours)
-                print("initial tour of first problem:", initial_tours[0], sep='\n')
+
                 # Forward pass to get the new tours
                 new_tours = self.actor(initial_tours)
                 new_tour_lengths = compute_euclidean_tour(new_tours)
-                print("new tour of first problem:", new_tours[0], sep='\n')
+                
                 # Use the new tour length directly as the loss to minimize
                 loss = new_tour_lengths.mean() * 100  # Apply loss scaling
 
