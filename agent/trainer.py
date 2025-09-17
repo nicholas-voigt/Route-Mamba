@@ -126,34 +126,30 @@ class SurrogateLoss:
                     max_norm = 1.0
                 )
 
-                # --- GRADIENT CHECK SNIPPET 1 ---
-                # Add this check only for the first batch of the first epoch for a quick test
-                if epoch == 0 and 'coordinates' in batch and coords.size(0) > 0 and not hasattr(self, '_checked_grads'):
+                # --- GRADIENT CHECK SNIPPET ---
+                if epoch % 5 == 0 and 'coordinates' in batch and coords.size(0) > 0:
                     print("\n--- Gradient Existence Check ---")
-                    found_grad = 0
+                    found_grads = 0
+                    vanishing_grads = 0
                     total_params = 0
+                    grad_norms = {}
                     for name, param in self.actor.named_parameters():
                         total_params += 1
                         if param.grad is None:
                             print(f"NO GRADIENT for: {name}")
                         else:
-                            found_grad += 1
-                    if found_grad == 0:
+                            vanishing_grads += (param.grad.data.norm(2).item() <= 0.001)
+                            found_grads += 1
+                            grad_norms[name] = param.grad.data.norm(2).item()
+                    if found_grads == 0:
                         print("!!! CRITICAL: No gradients were found for any parameter. !!!")
                     else:
-                        print(f"--- Gradients exist for {found_grad} parameters from a total of {total_params}. ---")
+                        print(f"--- Gradients exist for {found_grads} parameters from a total of {total_params}. ---")
+                        print(f"--- {vanishing_grads} parameters have vanishing gradients (norm <= 0.001). ---")
+                        print("Gradient norms:")
+                        for name, norm in grad_norms.items():
+                            print(f"{name}: {norm:.6f}")
                     print("--- End of Gradient Check ---\n")
-                    self._checked_grads = True # Ensure this only runs once
-                # --- END SNIPPET ---
-                # --- GRADIENT CHECK SNIPPET 2 ---
-                # This can be logged periodically
-                if epoch % 5 == 0 and 'coordinates' in batch and coords.size(0) > 0 and not hasattr(self, '_checked_grad_norm'):
-                    print("\n--- Gradient Norm Check ---")
-                    for name, param in self.actor.named_parameters():
-                        if param.grad is not None:
-                            grad_norm = param.grad.data.norm(2).item()
-                            print(f"Gradient norm for {name}: {grad_norm:.4f}")
-                    self._checked_grad_norm = True # Reset this if you want to see it every 5 epochs
                 # --- END SNIPPET ---
 
                 self.optimizer.step()
