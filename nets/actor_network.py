@@ -9,17 +9,21 @@ class Actor(nn.Module):
                  num_attention_heads, gs_tau, gs_iters, method):
         super().__init__()
 
+        # Model components
+        self.input_norm = nn.LayerNorm(input_dim)
         self.encoder = EmbeddingNet(
             input_dim = input_dim,
             embedding_dim = embedding_dim,
             num_harmonics = num_harmonics,
             alpha = frequency_scaling
         )
+        self.embedding_norm = nn.LayerNorm(2 * embedding_dim)
         self.model = MambaBlock(
             mamba_model_size = 2 * embedding_dim,
             mamba_hidden_state_size = mamba_hidden_dim,
             mamba_layers = mamba_layers
         )
+        self.mamba_norm = nn.LayerNorm(4 * embedding_dim)
         self.score_constructor = AttentionScoreHead(
             model_dim = 4 * embedding_dim,
             num_heads = num_attention_heads,
@@ -42,14 +46,18 @@ class Actor(nn.Module):
         Returns:
             st_perm: (B, N, I) - new tours
         """
+        features = self.input_norm(batch)  # (B, N, I)
+
         # 1. Encode node features (and cyclic encoding)
-        node_embeddings, cyclic_embeddings = self.encoder(batch)  # (B, N, E), (B, N, E)
+        node_embeddings, cyclic_embeddings = self.encoder(features)  # (B, N, E), (B, N, E)
+        total_embeddings = self.embedding_norm(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))
 
         # 2. MambaBlock: get per-node score vectors
-        mamba_feats = self.model(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))   # (B, N, 2M)
+        mamba_feats = self.model(total_embeddings)   # (B, N, 2M)
+        norm_mamba_feats = self.mamba_norm(mamba_feats)   # (B, N, 2M)
 
         # 3. ScoreHead: get score matrix (tour)
-        score_matrix = self.score_constructor(mamba_feats)  # (B, N, N)
+        score_matrix = self.score_constructor(norm_mamba_feats)  # (B, N, N)
 
         # 4. ValueDecoder: get soft permutation matrix (tour)
         soft_perm = self.decoder(score_matrix)  # (B, N, N)

@@ -48,8 +48,7 @@ class EmbeddingNet(nn.Module):
         """
         B, N, _ = x.shape
         # Node Feature Embedding
-        x_norm = F.layer_norm(x, (x.shape[-1],))  # [B, N, I]
-        nfe = self.node_feature_encoder(x_norm)  # [B, N, E]
+        nfe = self.node_feature_encoder(x)  # [B, N, E]
         # Cyclic Embedding
         ce = self.cyclic_encoding(N, x.device).unsqueeze(0).repeat(B, 1, 1)  # [B, N, 2K]
         ce = self.cyclic_projection(ce)  # [B, N, E]
