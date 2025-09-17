@@ -121,6 +121,10 @@ class SurrogateLoss:
                 # Optimize
                 self.optimizer.zero_grad()
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(
+                    parameters = self.actor.parameters(), 
+                    max_norm = 1.0
+                )
 
                 # --- GRADIENT CHECK SNIPPET 1 ---
                 # Add this check only for the first batch of the first epoch for a quick test
