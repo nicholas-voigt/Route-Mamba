@@ -71,6 +71,23 @@ class MambaBlock(nn.Module):
         )
         self.norm = nn.LayerNorm(mamba_model_size)
         self.dropout = nn.Dropout(dropout)
+        self.init_parameter_delta()  # initialize parameter delta as recommended in the Mamba paper
+
+    def init_parameter_delta(self):
+        # Initialize dt_proj bias as recommended in the Mamba paper
+        dt_rank = self.mamba.dt_proj.weight.size(0)
+        dt_init_std = dt_rank**-0.5 * 0.1
+        # Initialize dt_proj weights
+        nn.init.normal_(self.mamba.dt_proj.weight, mean=0.0, std=dt_init_std)
+        # Initialize dt_proj bias
+        dt = torch.exp(
+            torch.rand(dt_rank) * (math.log(0.1) - math.log(0.01)) + math.log(0.01)
+        ).clamp(min=0.001)
+        inv_dt = dt + torch.log(-torch.expm1(-dt))
+        with torch.no_grad():
+            self.mamba.dt_proj.bias.copy_(inv_dt)
+        # Initialize out_proj weights to zeros
+        nn.init.zeros_(self.mamba.out_proj.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Pre-Mamba-Normalization
