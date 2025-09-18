@@ -86,8 +86,8 @@ class MambaBlock(nn.Module):
         inv_dt = dt + torch.log(-torch.expm1(-dt))
         with torch.no_grad():
             self.mamba.dt_proj.bias.copy_(inv_dt)
-        # Initialize out_proj weights to zeros
-        nn.init.zeros_(self.mamba.out_proj.weight)
+        # Initialize out_proj weights using xavier initialization
+        nn.init.xavier_uniform_(self.mamba.out_proj.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Pre-Mamba-Normalization
