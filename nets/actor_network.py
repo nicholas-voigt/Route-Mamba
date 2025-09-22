@@ -17,13 +17,13 @@ class Actor(nn.Module):
             alpha = frequency_scaling
         )
         self.embedding_norm = nn.LayerNorm(2 * embedding_dim)
-        self.model = BidirectionalMambaEncoder(
-            mamba_model_size = 2 * embedding_dim,
-            mamba_hidden_state_size = mamba_hidden_dim,
-            dropout = 0.1,
-            mamba_layers = mamba_layers
-        )
-        self.mamba_norm = nn.LayerNorm(4 * embedding_dim)
+        # self.model = BidirectionalMambaEncoder(
+        #     mamba_model_size = 2 * embedding_dim,
+        #     mamba_hidden_state_size = mamba_hidden_dim,
+        #     dropout = 0.1,
+        #     mamba_layers = mamba_layers
+        # )
+        # self.mamba_norm = nn.LayerNorm(4 * embedding_dim)
         self.score_constructor = AttentionScoreHead(
             model_dim = 2 * embedding_dim,
             num_heads = num_attention_heads,
