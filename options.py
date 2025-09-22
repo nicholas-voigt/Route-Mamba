@@ -51,7 +51,7 @@ def get_options(args=None):
     # logs/output settings
     parser.add_argument('--no_progress_bar', action='store_true', help='disable progress bar')
     parser.add_argument('--log_dir', default='logs', help='directory to write TensorBoard information to')
-    parser.add_argument('--log_step', type=int, default=50, help='log info every log_step gradient steps')
+    parser.add_argument('--log_step', type=int, default=10, help='log info every log_step gradient steps')
     parser.add_argument('--output_dir', default='outputs', help='directory to write output models to')
     parser.add_argument('--no_save', action='store_true', help='do not save models, only run inference')
     parser.add_argument('--run_name', default='run_name', help='name to identify the run')

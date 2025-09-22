@@ -106,7 +106,7 @@ def train_epoch(model, optimizer, lr_scheduler, epoch, train_dataset, val_datase
         val_dataset: The validation dataset (torch.utils.data.Dataset)
         opts: Model options (argparse.Namespace)
     """
-    print("Start train epoch {} with lr={}".format(epoch, optimizer.param_groups[0]['lr']))
+    print(f"Training Epoch {epoch}:")
     step = epoch * (opts.problem_size // opts.batch_size)
     start_time = time.time()
 
@@ -119,8 +119,8 @@ def train_epoch(model, optimizer, lr_scheduler, epoch, train_dataset, val_datase
     model.decoder.gs_tau = max(opts.gs_tau_final, model.decoder.gs_tau / opts.gs_anneal_rate)
 
     # Parameter Logging
-    print("- Gumbel-Sinkhorn temperature: {:.4f}".format(model.decoder.gs_tau))
-    print("- Learning rate: {:.6f}".format(optimizer.param_groups[0]['lr']))
+    print(f"- Gumbel-Sinkhorn temperature: {model.decoder.gs_tau:.4f}")
+    print(f"- Learning rate: {optimizer.param_groups[0]['lr']:.6f}")
 
     # Put model in train mode
     model.train()
@@ -131,7 +131,7 @@ def train_epoch(model, optimizer, lr_scheduler, epoch, train_dataset, val_datase
         step += 1
 
     epoch_duration = time.time() - start_time
-    print("Finished epoch {}, took {} s".format(epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_duration))))
+    print(f"- Epoch Runtime: {time.strftime('%H:%M:%S', time.gmtime(epoch_duration))} s")
 
     # Validation
     validate(model, val_dataset, opts)
@@ -167,11 +167,8 @@ def train_batch(model, optimizer, batch, step, opts):
         max_norm = 1.0
     )
 
-    # Logging
+    # Gradient existence check (for debugging)
     if step % opts.log_step == 0:
-        # Loss and tour lengths
-        print(f"Step {step}: Loss = {loss.item():.4f}, Initial Tour Length = {initial_tour_lengths.mean().item():.4f}, New Tour Length = {new_tour_lengths.mean().item():.4f}")
-        # Gradient existence check (for debugging)
         found_grads = 0
         vanishing_grads = 0
         total_params = len(list(model.parameters()))
