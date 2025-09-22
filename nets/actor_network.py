@@ -52,13 +52,13 @@ class Actor(nn.Module):
         total_embeddings = self.embedding_norm(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))
 
         # 3. Mamba Workshop: Layered Mamba blocks with internal Pre-LN
-        mamba_feats = self.model(total_embeddings)   # (B, N, 2M)
+        # mamba_feats = self.model(total_embeddings)   # (B, N, 2M)
 
         # 4. External Normalization: Prepare Input to ScoreHead
-        norm_mamba_feats = self.mamba_norm(mamba_feats)   # (B, N, 2M)
+        # norm_mamba_feats = self.mamba_norm(mamba_feats)   # (B, N, 2M)
 
         # 5. Attention Workshop: Multi-Head Attention with FFN and internal Pre-LN and projection to scores
-        score_matrix = self.score_constructor(norm_mamba_feats)  # (B, N, N)
+        score_matrix = self.score_constructor(total_embeddings)  # (B, N, N)
 
         # 6. Decoder Workshop 1: Use Gumbel-Sinkhorn to get soft permutation matrix (tour)
         soft_perm = self.decoder(score_matrix)  # (B, N, N)
