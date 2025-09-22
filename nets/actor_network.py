@@ -17,15 +17,15 @@ class Actor(nn.Module):
             alpha = frequency_scaling
         )
         self.embedding_norm = nn.LayerNorm(2 * embedding_dim)
-        # self.model = BidirectionalMambaEncoder(
-        #     mamba_model_size = 2 * embedding_dim,
-        #     mamba_hidden_state_size = mamba_hidden_dim,
-        #     dropout = 0.1,
-        #     mamba_layers = mamba_layers
-        # )
-        # self.mamba_norm = nn.LayerNorm(4 * embedding_dim)
+        self.model = BidirectionalMambaEncoder(
+            mamba_model_size = 2 * embedding_dim,
+            mamba_hidden_state_size = mamba_hidden_dim,
+            dropout = 0.1,
+            mamba_layers = mamba_layers
+        )
+        self.mamba_norm = nn.LayerNorm(4 * embedding_dim)
         self.score_constructor = AttentionScoreHead(
-            model_dim = 2 * embedding_dim,
+            model_dim = 4 * embedding_dim,
             num_heads = num_attention_heads,
             ffn_expansion = 4,
             dropout = 0.1
@@ -52,13 +52,13 @@ class Actor(nn.Module):
         total_embeddings = self.embedding_norm(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))
 
         # 3. Mamba Workshop: Layered Mamba blocks with internal Pre-LN
-        # mamba_feats = self.model(total_embeddings)   # (B, N, 2M)
+        mamba_feats = self.model(total_embeddings)   # (B, N, 2M)
 
         # 4. External Normalization: Prepare Input to ScoreHead
-        # norm_mamba_feats = self.mamba_norm(mamba_feats)   # (B, N, 2M)
+        norm_mamba_feats = self.mamba_norm(mamba_feats)   # (B, N, 2M)
 
         # 5. Attention Workshop: Multi-Head Attention with FFN and internal Pre-LN and projection to scores
-        score_matrix = self.score_constructor(total_embeddings)  # (B, N, N)
+        score_matrix = self.score_constructor(norm_mamba_feats)  # (B, N, N)
 
         # 6. Decoder Workshop 1: Use Gumbel-Sinkhorn to get soft permutation matrix (tour)
         soft_perm = self.decoder(score_matrix)  # (B, N, N)

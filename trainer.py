@@ -168,17 +168,20 @@ def train_batch(model, optimizer, batch, step, opts):
     )
 
     # Gradient existence check (for debugging)
-    # if step % opts.log_step == 0:
-    #     found_grads = 0
-    #     vanishing_grads = 0
-    #     total_params = len(list(model.parameters()))
-    #     grad_norms = {}
-    #     for name, param in model.named_parameters():
-    #         if param is not None:
-    #             vanishing_grads += (param.grad.data.norm(2).item() <= 0.001)
-    #             found_grads += 1
-    #             grad_norms[name] = param.grad.data.norm(2).item()
-    #     print(f"Step {step}: Found gradients for {found_grads}/{total_params} parameters, {vanishing_grads} with vanishing gradients.")
+    if step % opts.log_step == 0:
+        found_grads = 0
+        vanishing_grads = 0
+        total_params = len(list(model.parameters()))
+        grad_norms = {}
+        for name, param in model.named_parameters():
+            if param is not None:
+                vanishing_grads += (param.grad.data.norm(2).item() <= 0.001)
+                found_grads += 1
+                grad_norms[name] = param.grad.data.norm(2).item()
+        print(f"Step {step}: Found gradients for {found_grads}/{total_params} parameters, {vanishing_grads} with vanishing gradients.")
+        print("Gradient norms:")
+        for name, norm in grad_norms.items():
+            print(f"  {name}: {norm:.6f}")
 
     # Step the optimizer
     optimizer.step()
