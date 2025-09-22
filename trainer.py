@@ -177,7 +177,7 @@ def train_batch(model, optimizer, batch, step, opts):
         total_params = len(list(model.parameters()))
         grad_norms = {}
         for name, param in model.named_parameters():
-            if param.grad:
+            if param is not None:
                 vanishing_grads += (param.grad.data.norm(2).item() <= 0.001)
                 found_grads += 1
                 grad_norms[name] = param.grad.data.norm(2).item()
