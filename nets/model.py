@@ -11,30 +11,26 @@ class EmbeddingNet(nn.Module):
     Embedding Network for node features.
     Performs node feature embedding and cyclic positional encoding.
     """
-    def __init__(self, node_dim: int, embedding_dim: int, k: int, device: torch.device, alpha: float):
+    def __init__(self, input_dim: int, embedding_dim: int, num_harmonics: int, alpha: float):
         super().__init__()
-        self.node_feature_encoder = nn.Linear(node_dim, embedding_dim, bias=False)  # Linear layer for node feature embedding
-        self.cyclic_projection = nn.Linear(2 * k, embedding_dim, bias=False)  # Linear layer to project harmonics to embedding_dim
+        self.node_feature_encoder = nn.Linear(input_dim, embedding_dim, bias=False)   # Linear layer for node feature embedding
+        self.cyclic_projection = nn.Linear(2 * num_harmonics, embedding_dim, bias=False)  # Linear layer to project harmonics to Embedding space
+        self.k = num_harmonics  # Number of harmonics
+        self.alpha = alpha      # Scaling factor for frequency base
 
-        self.node_dim = node_dim            # Dimension of the initial node features
-        self.embedding_dim = embedding_dim  # Dimension of the embedding space
-        self.k = k                          # Number of harmonics
-        self.alpha = alpha                  # Scaling factor for frequency base
-        self.device = device                # Device for computation
-
-    def cyclic_encoding(self, N: int):
+    def cyclic_encoding(self, N: int, device: torch.device):
         """
         Cyclic embedding which incorporates relative positional information.
         Args:
             N: Number of positions (tour length)
+            device: Device to create the tensor on
         Returns:
-            node feature embedding: A tensor of shape (batch, N, embedding_dim)
-            cyclic embedding: A tensor of shape (batch, N, embedding_dim)
+            cyclic embedding: A tensor of shape (B, N, E)
         """
         # tour phases: positions 0...N-1 [N]
-        t = torch.arange(N, device=self.device, dtype=torch.float32)
+        t = torch.arange(N, device=device, dtype=torch.float32)
         # integer harmonics for exact periodicity [k]
-        h = torch.arange(1, self.k + 1, device=self.device, dtype=torch.float32)
+        h = torch.arange(1, self.k + 1, device=device, dtype=torch.float32)
         # map angles on radian
         angles = 2 * math.pi * (t[:, None] * h[None, :] / N)  # [N, k]
         # interleave sin/cos & decay amplitudes for higher frequencies
@@ -50,75 +46,115 @@ class EmbeddingNet(nn.Module):
         Returns:
             feats: (batch, N, embedding_dim * 2) - concatenated node and cyclic embeddings
         """
-        # Node Feature Embedding
-        x_norm = F.layer_norm(x, (x.shape[-1],))  # [B, N, node_dim]
-        nfe = self.node_feature_encoder(x_norm)  # [B, N, embedding_dim]
-
-        # Cyclic Embedding
         B, N, _ = x.shape
-        ce = self.cyclic_encoding(N).unsqueeze(0).repeat(B, 1, 1)  # [B, N, 2k]
-        ce = self.cyclic_projection(ce)  # [B, N, embedding_dim]
-
+        # Node Feature Embedding
+        nfe = self.node_feature_encoder(x)  # [B, N, E]
+        # Cyclic Embedding
+        ce = self.cyclic_encoding(N, x.device).unsqueeze(0).repeat(B, 1, 1)  # [B, N, 2K]
+        ce = self.cyclic_projection(ce)  # [B, N, E]
         return nfe, ce
 
 
 class MambaBlock(nn.Module):
     """
-    Mamba Block for the TSP model.
+    Single Mamba Block for the TSP model. Designed with reference to the Attention Encoder Layer.
+    Applies Pre-LN: LayerNorm -> Mamba -> Dropout -> Residual
     Takes concatenated node and cyclic embeddings as input and outputs a score for each node.
     """
-    def __init__(self, input_dim, mamba_dim, hidden_dim, layers):
+    def __init__(self, mamba_model_size: int, mamba_hidden_state_size: int, dropout: float):
+        super().__init__()
+        self.mamba = Mamba(
+            d_model=mamba_model_size,
+            d_state=mamba_hidden_state_size,
+            d_conv=4,
+            expand=2
+        )
+        self.norm = nn.LayerNorm(mamba_model_size)
+        self.dropout = nn.Dropout(dropout)
+        self.init_parameter_delta()  # initialize parameter delta as recommended in the Mamba paper
+
+    def init_parameter_delta(self):
+        # Initialize dt_proj bias as recommended in the Mamba paper
+        dt_rank = self.mamba.dt_proj.weight.size(0)
+        dt_init_std = dt_rank**-0.5 * 0.1
+        # Initialize dt_proj weights
+        nn.init.normal_(self.mamba.dt_proj.weight, mean=0.0, std=dt_init_std)
+        # Initialize dt_proj bias
+        dt = torch.exp(
+            torch.rand(dt_rank) * (math.log(0.1) - math.log(0.01)) + math.log(0.01)
+        ).clamp(min=0.001)
+        inv_dt = dt + torch.log(-torch.expm1(-dt))
+        with torch.no_grad():
+            self.mamba.dt_proj.bias.copy_(inv_dt)
+        # Initialize out_proj weights using xavier initialization
+        nn.init.xavier_uniform_(self.mamba.out_proj.weight)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Pre-Mamba-Normalization
+        normalized_x = self.norm(x)
+        # Mamba Layer
+        mamba_output = self.mamba(normalized_x)
+        # Residual connection
+        x = x + self.dropout(mamba_output)
+        return x
+
+
+class BidirectionalMambaEncoder(nn.Module):
+    """
+    Mamba Implementation for the TSP model.
+    Takes concatenated node and cyclic embeddings as input and outputs a score for each node.
+    """
+    def __init__(self, mamba_model_size: int, mamba_hidden_state_size: int, dropout: float, mamba_layers: int):
         """
         Args:
-            input_dim: Dimension of concatenated embedding (node + cyclic)
-            mamba_dim: Model dimension for Mamba (d_model)
-            hidden_dim: SSM state expansion factor (d_state)
-            layers: Number of Mamba blocks stacked (min: 1)
+            mamba_model_size: Model dimension for Mamba (d_model), defined by input size
+            mamba_hidden_state_size: SSM state expansion factor (d_state)
+            mamba_layers: Number of Mamba blocks stacked (min: 1)
         """
-        super(MambaBlock, self).__init__()
-        self.embedding_dim = input_dim  # Dimension of the input embeddings
-        self.mamba_dim = mamba_dim if mamba_dim else input_dim  # Mamba model dimension (d_model)
-        self.hidden_dim = hidden_dim    # Hidden dimension for Mamba
+        super().__init__()
 
-        self.input_proj = nn.Linear(self.embedding_dim, self.mamba_dim) if self.embedding_dim != self.mamba_dim else None
-
-        self.mamba_layers = nn.ModuleList([
-            Mamba(
-                d_model=self.mamba_dim,   # Model dimension d_model
-                d_state=self.hidden_dim,  # SSM state expansion factor
-                d_conv=4,                 # Local convolution width
-                expand=2                  # Block expansion factor
-            ).to('cuda') for _ in range(layers)
+        self.forward_block = nn.ModuleList([
+            MambaBlock(mamba_model_size, mamba_hidden_state_size, dropout) for _ in range(mamba_layers)
         ])
 
-    def forward(self, x):
+        self.backward_block = nn.ModuleList([
+            MambaBlock(mamba_model_size, mamba_hidden_state_size, dropout) for _ in range(mamba_layers)
+        ])
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: (batch, N, embedding_dim)
+            x: (B, N, 2E)
         Returns:
-            node_feats: (batch, N, model_dim)
+            node_feats: (B, N, 4E)
         """
-        if self.input_proj is not None: # Project input to Mamba dimension (safety)
-            x = self.input_proj(x)
-        for mamba_block in self.mamba_layers:
-            x = mamba_block(x)
-        return x    # [B, N, mamba_dim]
+        # --- Forward Pass ---
+        x_fwd = x
+        for mamba_layer in self.forward_block:
+            x_fwd = mamba_layer(x_fwd)
+        # --- Backward Pass ---
+        x_bwd = torch.flip(x, dims=[1])  # Reverse sequence
+        for mamba_layer in self.backward_block:
+            x_bwd = mamba_layer(x_bwd)
+        x_bwd = torch.flip(x_bwd, dims=[1])  # Un-reverse to align
+        # --- Concatenate ---
+        return torch.cat([x_fwd, x_bwd], dim=-1)  # (B, N, 4E)
 
 
 class BilinearScoreHead(nn.Module):
     """
     Takes Mamba and cyclic features as input and builds a score matrix S for gumbel-sinkhorn soft permutation.
     Build S in [B x N x N] from:
-      E = mamba_features in [B x N x model_dim]
-      R = cyclic_feats    in [B x N x embedding_dim]
+      E = mamba_features in [B x N x 4E]
+      R = cyclic_feats    in [B x N x E]
       W = bilinear_weights in [d_head x d_head]
     via S = (E U_e) W (R U_r)^T
     """
-    def __init__(self, model_dim: int, embedding_dim: int, d_head: int = 128, bias: bool = True):
+    def __init__(self, model_vector_size: int, cycle_vector_size: int, score_head_dim: int = 128, bias: bool = True):
         super().__init__()
-        self.proj_e = nn.Linear(model_dim,    d_head, bias=False)  # U_e
-        self.proj_r = nn.Linear(embedding_dim, d_head, bias=False) # U_r
-        self.W      = nn.Parameter(torch.empty(d_head, d_head))    # bilinear core
+        self.proj_e = nn.Linear(model_vector_size, score_head_dim, bias=False)  # U_e
+        self.proj_r = nn.Linear(cycle_vector_size, score_head_dim, bias=False) # U_r
+        self.W      = nn.Parameter(torch.empty(score_head_dim, score_head_dim))    # bilinear core
         nn.init.xavier_uniform_(self.W)
 
         if bias:
@@ -148,6 +184,60 @@ class BilinearScoreHead(nn.Module):
         return S
 
 
+class AttentionScoreHead(nn.Module):
+    """
+    Takes Mamba features as input, processes them through one Transformer-style Encoder layer,
+    and then projects them to a final score matrix S in [B x N x N].
+    """
+    def __init__(self, model_dim: int, num_heads: int, ffn_expansion: int, dropout: float):
+        super().__init__()
+        self.attention = nn.MultiheadAttention(
+            embed_dim=model_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+        self.ffn = nn.Sequential(
+            nn.Linear(model_dim, model_dim * ffn_expansion),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(model_dim * ffn_expansion, model_dim)
+        )
+        self.attn_norm = nn.LayerNorm(model_dim)
+        self.attn_dropout = nn.Dropout(dropout)
+        self.ffn_norm = nn.LayerNorm(model_dim)
+        self.ffn_dropout = nn.Dropout(dropout)
+
+        self.projection = nn.Linear(model_dim, model_dim)  # Final projection to score matrix dimension
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Perform self attention on Mamba features to get score matrix S.
+        Args:
+            mamba_features: [B, N, model_dim] - rich node features including context
+        Returns:
+            Score Matrix: [B, N, N]
+        """
+        # Pre-Attention-Normalization
+        normalized_x = self.attn_norm(x)
+        # Multi-Head Self-Attention
+        attn_output, _ = self.attention(normalized_x, normalized_x, normalized_x)
+        # Residual connection
+        x = x + self.attn_dropout(attn_output)
+        # Pre-Feed-Forward-Normalization
+        normalized_x = self.ffn_norm(x)
+        # Feed-Forward Network
+        ffn_output = self.ffn(normalized_x)
+        # Residual connection
+        x = x + self.ffn_dropout(ffn_output)
+        # Feature projection to get query and key for score calculation
+        query = self.projection(x)   # [B, N, model_dim]
+        key = self.projection(x)     # [B, N, model_dim]
+        # Score matrix calculation via dot product
+        scores = torch.matmul(query, key.transpose(1, 2))  # [B, N, N]
+        return scores
+
+
 class GumbelSinkhornDecoder(nn.Module):
     """
     Takes score matrix [B, N, N] as input,
@@ -160,7 +250,7 @@ class GumbelSinkhornDecoder(nn.Module):
         self.gs_iters = gs_iters
 
     # ---- Gumbel noise sampling ----
-    def sample_gumbel(self, shape, eps=1e-20, device=None):
+    def sample_gumbel(self, shape, eps, device: torch.device):
         U = torch.rand(shape, device=device)
         return -torch.log(-torch.log(U + eps) + eps)
 
@@ -180,7 +270,7 @@ class GumbelSinkhornDecoder(nn.Module):
             soft permutation matrix [B, N, N]
         """
         # Add Gumbel noise
-        gumbel_noise = self.sample_gumbel(scores.shape, device=scores.device)
+        gumbel_noise = self.sample_gumbel(scores.shape, 1e-20, scores.device)
         scores = (scores + gumbel_noise) / self.gs_tau
         # Sinkhorn normalization to get doubly stochastic matrix
         soft_perm = self.sinkhorn(scores)

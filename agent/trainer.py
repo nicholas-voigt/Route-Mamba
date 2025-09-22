@@ -12,19 +12,16 @@ class SurrogateLoss:
         self.opts = opts
         # Initialize actor network
         self.actor = Actor(
-            input_dim = opts.problem_input_dim,
+            input_dim = opts.input_dim,
             embedding_dim = opts.embedding_dim,
-            harmonics = opts.harmonics,
+            num_harmonics = opts.num_harmonics,
             frequency_scaling = opts.frequency_scaling,
-            model_dim = opts.model_dim,
-            hidden_dim = opts.hidden_dim,
+            mamba_hidden_dim = opts.mamba_hidden_dim,
             mamba_layers = opts.mamba_layers,
-            score_head_dim = opts.score_head_dim,
-            score_head_bias = opts.score_head_bias,
+            num_attention_heads = opts.num_attention_heads,
             gs_tau = opts.gs_tau_initial,
             gs_iters = opts.gs_iters,
             method = opts.tour_method,
-            device = opts.device
         ).to(opts.device)
         # Initialize optimizer
         self.optimizer = torch.optim.Adam(
@@ -80,61 +77,93 @@ class SurrogateLoss:
         # Initialize Gumbel-Sinkhorn parameters
         anneal_rate = (self.opts.gs_tau_initial / self.opts.gs_tau_final) ** (1.0 / self.opts.n_epochs)
 
+        # prepare training data
+        training_dataset = problem.make_dataset(
+            size=self.opts.graph_size,
+            num_samples=self.opts.problem_size
+        )
+
+        # Epoch training loop
         for epoch in range(self.opts.n_epochs):
-            # prepare training data
-            training_dataset = problem.make_dataset(
-                size=self.opts.graph_size,
-                num_samples=self.opts.epoch_size
-            )
-            training_dataloader = DataLoader(
+            self._checked_grads = False # Reset gradient check flag each epoch
+            # Initialize accumulators for logging
+            epoch_loss = 0
+            epoch_initial_length = 0
+            epoch_new_length = 0
+            num_samples = len(training_dataset)
+
+            # Update Gumbel-Sinkhorn temperature
+            self.actor.decoder.gs_tau = max(self.opts.gs_tau_final, self.actor.decoder.gs_tau / anneal_rate)
+
+            # Batch training loop
+            for batch in DataLoader(
                 dataset=training_dataset,
                 batch_size=self.opts.batch_size,
                 shuffle=False,
                 num_workers=0,
                 pin_memory=True
-            )
-            # Initialize accumulators for logging
-            total_loss = 0
-            total_initial_length = 0
-            total_new_length = 0
-            num_samples = len(training_dataloader.dataset)  # type: ignore
-            # Update Gumbel-Sinkhorn temperature
-            self.actor.decoder.gs_tau = max(self.opts.gs_tau_final, self.actor.decoder.gs_tau / anneal_rate)
-
-            # Batch training loop
-            for batch in training_dataloader:
+            ):
                 self.actor.train()
                 batch = {k: v.to(self.opts.device) for k, v in batch.items()}
                 coords = batch['coordinates']
 
                 # Create initial tour using specified heuristic (greedy or random)
                 initial_tours = get_initial_tours(coords, self.opts.tour_heuristic)
-
-                # Forward pass to get the straight-through permutation
-                st_perm = self.actor(initial_tours)
-
-                # Create the new tour using the permutation & compute tour lengths
-                new_tours = torch.bmm(st_perm, initial_tours)
                 initial_tour_lengths = compute_euclidean_tour(initial_tours)
+
+                # Forward pass to get the new tours
+                new_tours = self.actor(initial_tours)
                 new_tour_lengths = compute_euclidean_tour(new_tours)
                 
                 # Use the new tour length directly as the loss to minimize
-                loss = new_tour_lengths.mean()
+                loss = new_tour_lengths.mean() * 100  # Apply loss scaling
 
                 # Optimize
                 self.optimizer.zero_grad()
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(
+                    parameters = self.actor.parameters(), 
+                    max_norm = 1.0
+                )
+
+                # --- GRADIENT CHECK SNIPPET ---
+                if epoch % 5 == 0 and not self._checked_grads:
+                    print("\n--- Gradient Existence Check ---")
+                    found_grads = 0
+                    vanishing_grads = 0
+                    total_params = 0
+                    grad_norms = {}
+                    for name, param in self.actor.named_parameters():
+                        total_params += 1
+                        if param.grad is None:
+                            print(f"NO GRADIENT for: {name}")
+                        else:
+                            vanishing_grads += (param.grad.data.norm(2).item() <= 0.001)
+                            found_grads += 1
+                            grad_norms[name] = param.grad.data.norm(2).item()
+                    if found_grads == 0:
+                        print("!!! CRITICAL: No gradients were found for any parameter. !!!")
+                    else:
+                        print(f"--- Gradients exist for {found_grads} parameters from a total of {total_params}. ---")
+                        print(f"--- {vanishing_grads} parameters have vanishing gradients (norm <= 0.001). ---")
+                        print("Gradient norms:")
+                        for name, norm in grad_norms.items():
+                            print(f"{name}: {norm:.6f}")
+                    print("--- End of Gradient Check ---\n")
+                    self._checked_grads = True
+                # --- END SNIPPET ---
+
                 self.optimizer.step()
 
                 # Accumulate metrics for logging
-                total_loss += loss.item() * coords.size(0)
-                total_initial_length += initial_tour_lengths.sum().item()
-                total_new_length += new_tour_lengths.sum().item()
+                epoch_loss += loss.item() * coords.size(0)
+                epoch_initial_length += initial_tour_lengths.sum().item()
+                epoch_new_length += new_tour_lengths.sum().item()
 
-            # 3. Calculate epoch averages and log them
-            avg_loss = total_loss / num_samples
-            avg_initial_length = total_initial_length / num_samples
-            avg_new_length = total_new_length / num_samples
+            # Calculate epoch averages and log them
+            avg_loss = epoch_loss / num_samples
+            avg_initial_length = epoch_initial_length / num_samples
+            avg_new_length = epoch_new_length / num_samples
 
             epoch_log = {
                 'epoch': epoch + 1,
