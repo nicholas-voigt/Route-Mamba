@@ -35,7 +35,8 @@ def get_options(args=None):
     parser.add_argument('--RL_agent', default='surrogate', choices = ['surrogate'], help='RL Training algorithm')
     parser.add_argument('--n_epochs', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, default=500,help='number of instances per batch during training')
-    parser.add_argument('--lr_model', type=float, default=1e-4, help="learning rate for the actor network")
+    parser.add_argument('--initial_lr', type=float, default=1e-2, help="initial learning rate for the actor network")
+    parser.add_argument('--lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
 
     # Inference and validation parameters
     parser.add_argument('--eval_only', action='store_true', help='switch to inference mode')

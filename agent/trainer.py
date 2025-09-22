@@ -23,10 +23,14 @@ class SurrogateLoss:
             gs_iters = opts.gs_iters,
             method = opts.tour_method,
         ).to(opts.device)
-        # Initialize optimizer
-        self.optimizer = torch.optim.Adam(
+        # Initialize lr-scheduler and optimizer
+        self.optimizer = torch.optim.AdamW(
             params = self.actor.parameters(),
-            lr = opts.lr_model
+            lr = opts.initial_lr
+        )
+        self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            optimizer = self.optimizer,
+            gamma = opts.lr_decay
         )
         # Initialize simple logger
         self.training_log = []
@@ -154,6 +158,7 @@ class SurrogateLoss:
                 # --- END SNIPPET ---
 
                 self.optimizer.step()
+                self.lr_scheduler.step()
 
                 # Accumulate metrics for logging
                 epoch_loss += loss.item() * coords.size(0)
