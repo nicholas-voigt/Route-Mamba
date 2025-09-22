@@ -58,6 +58,9 @@ def get_options(args=None):
     parser.add_argument('--checkpoint_epochs', type=int, default=0, help='save checkpoint every n epochs, 0 to save no checkpoints')
     
     opts = parser.parse_args(args)
+
+    # Some additional settings
+    opts.gs_anneal_rate = (opts.gs_tau_final / opts.gs_tau_initial) ** (1 / float(opts.n_epochs))  # exponential decay
     
     # processing settings
     opts.use_cuda = torch.cuda.is_available()
