@@ -107,7 +107,7 @@ def train_epoch(model, optimizer, lr_scheduler, epoch, train_dataset, val_datase
         opts: Model options (argparse.Namespace)
     """
     print("Start train epoch {} with lr={}".format(epoch, optimizer.param_groups[0]['lr']))
-    step = epoch * (opts.epoch_size // opts.batch_size)
+    step = epoch * (opts.problem_size // opts.batch_size)
     start_time = time.time()
 
     training_dataloader = DataLoader(
