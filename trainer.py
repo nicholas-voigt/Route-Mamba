@@ -116,7 +116,7 @@ def train_epoch(model, optimizer, lr_scheduler, epoch, train_dataset, val_datase
     )
 
     # Update Gumbel-Sinkhorn temperature
-    model.decoder.gs_tau = max(opts.gs_tau_final, model.decoder.gs_tau / opts.anneal_rate)
+    model.decoder.gs_tau = max(opts.gs_tau_final, model.decoder.gs_tau / opts.gs_anneal_rate)
 
     # Parameter Logging
     print("- Gumbel-Sinkhorn temperature: {:.4f}".format(model.decoder.gs_tau))
