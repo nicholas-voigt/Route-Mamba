@@ -157,14 +157,17 @@ class SurrogateLoss:
                     self._checked_grads = True
                 # --- END SNIPPET ---
 
+                # Step the optimizer
                 self.optimizer.step()
-                self.lr_scheduler.step()
 
                 # Accumulate metrics for logging
                 epoch_loss += loss.item() * coords.size(0)
                 epoch_initial_length += initial_tour_lengths.sum().item()
                 epoch_new_length += new_tour_lengths.sum().item()
 
+            # Step the learning rate scheduler once per epoch
+            self.lr_scheduler.step()
+            
             # Calculate epoch averages and log them
             avg_loss = epoch_loss / num_samples
             avg_initial_length = epoch_initial_length / num_samples

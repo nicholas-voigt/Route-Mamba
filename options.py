@@ -35,7 +35,7 @@ def get_options(args=None):
     parser.add_argument('--RL_agent', default='surrogate', choices = ['surrogate'], help='RL Training algorithm')
     parser.add_argument('--n_epochs', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, default=500,help='number of instances per batch during training')
-    parser.add_argument('--initial_lr', type=float, default=1e-2, help="initial learning rate for the actor network")
+    parser.add_argument('--initial_lr', type=float, default=1e-3, help="initial learning rate for the actor network")
     parser.add_argument('--lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
 
     # Inference and validation parameters
@@ -55,7 +55,7 @@ def get_options(args=None):
     parser.add_argument('--output_dir', default='outputs', help='directory to write output models to')
     parser.add_argument('--no_save', action='store_true', help='do not save models, only run inference')
     parser.add_argument('--run_name', default='run_name', help='name to identify the run')
-    parser.add_argument('--checkpoint_epochs', type=int, default=1, help='save checkpoint every n epochs (default 1), 0 to save no checkpoints')
+    parser.add_argument('--checkpoint_epochs', type=int, default=0, help='save checkpoint every n epochs, 0 to save no checkpoints')
     
     opts = parser.parse_args(args)
     
