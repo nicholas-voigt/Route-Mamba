@@ -116,7 +116,7 @@ def train_epoch(model, optimizer, lr_scheduler, epoch, train_dataset, val_datase
     )
 
     # Update Gumbel-Sinkhorn temperature
-    model.decoder.gs_tau = max(opts.gs_tau_final, model.decoder.gs_tau / opts.gs_anneal_rate)
+    model.decoder.gs_tau = max(opts.gs_tau_final, model.decoder.gs_tau * opts.gs_anneal_rate)
 
     # Parameter Logging
     print(f"- Gumbel-Sinkhorn temperature: {model.decoder.gs_tau:.4f}")
@@ -131,7 +131,7 @@ def train_epoch(model, optimizer, lr_scheduler, epoch, train_dataset, val_datase
         step += 1
 
     epoch_duration = time.time() - start_time
-    print(f"- Epoch Runtime: {time.strftime('%H:%M:%S', time.gmtime(epoch_duration))} s")
+    print(f"- Epoch Runtime: {epoch_duration:.2f} s")
 
     # Validation
     validate(model, val_dataset, opts)
@@ -168,17 +168,17 @@ def train_batch(model, optimizer, batch, step, opts):
     )
 
     # Gradient existence check (for debugging)
-    if step % opts.log_step == 0:
-        found_grads = 0
-        vanishing_grads = 0
-        total_params = len(list(model.parameters()))
-        grad_norms = {}
-        for name, param in model.named_parameters():
-            if param is not None:
-                vanishing_grads += (param.grad.data.norm(2).item() <= 0.001)
-                found_grads += 1
-                grad_norms[name] = param.grad.data.norm(2).item()
-        print(f"Step {step}: Found gradients for {found_grads}/{total_params} parameters, {vanishing_grads} with vanishing gradients.")
+    # if step % opts.log_step == 0:
+    #     found_grads = 0
+    #     vanishing_grads = 0
+    #     total_params = len(list(model.parameters()))
+    #     grad_norms = {}
+    #     for name, param in model.named_parameters():
+    #         if param is not None:
+    #             vanishing_grads += (param.grad.data.norm(2).item() <= 0.001)
+    #             found_grads += 1
+    #             grad_norms[name] = param.grad.data.norm(2).item()
+    #     print(f"Step {step}: Found gradients for {found_grads}/{total_params} parameters, {vanishing_grads} with vanishing gradients.")
 
     # Step the optimizer
     optimizer.step()
