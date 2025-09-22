@@ -53,7 +53,7 @@ def run(opts):
 
     # Start the actual training/inference loop
     val_dataset = problem.make_dataset(
-        size=opts.graph_size, num_samples=opts.val_size, filename=opts.val_dataset)
+        size=opts.graph_size, num_samples=opts.eval_size, filename=opts.val_dataset)
     train_dataset = problem.make_dataset(
         size=opts.graph_size, num_samples=opts.problem_size)
 
