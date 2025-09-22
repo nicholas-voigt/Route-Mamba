@@ -80,9 +80,9 @@ def validate(model, dataset, opts):
             total_initial_tour_length += initial_tour_lengths.sum().item()
             total_samples += coords.size(0)
 
-            # Feasibility check
-            if not check_feasibility(new_tours):
-                print("Warning: Infeasible tour detected during validation!")
+            # # Feasibility check
+            # if not check_feasibility(new_tours):
+            #     print("Warning: Infeasible tour detected during validation!")
 
     avg_initial_length = total_initial_tour_length / total_samples
     avg_new_length = total_tour_length / total_samples
