@@ -1,15 +1,13 @@
 import os
-import json
-import torch
 import pprint
-import numpy as np
 import warnings
-import random
-from options import get_options
+import torch
+from torch import optim
 
 from problems.tsp import TSP
-from agent.trainer import SurrogateLoss
-
+from nets.actor_network import Actor
+from trainer import train_epoch, validate
+from options import get_options
 
 def load_problem(name):
     problem = {
@@ -19,18 +17,13 @@ def load_problem(name):
     return problem
 
 
-def load_agent(name):
-    agent = {
-        'surrogate': SurrogateLoss
-    }.get(name, None)
-    assert agent is not None, "Currently unsupported agent: {}!".format(name)
-    return agent
-
-
 def run(opts):
 
     # Pretty print the run args
     pprint.pprint(vars(opts))
+
+    # Set the random seed
+    torch.manual_seed(opts.seed)
 
     # Set the device - Has to be cuda, Mamba only works on GPU
     opts.device = torch.device("cuda" if opts.use_cuda else "cpu")
@@ -40,20 +33,35 @@ def run(opts):
     # Figure out what's the problem
     problem = load_problem(opts.problem)(size=opts.graph_size)
 
-    # Figure out the RL algorithm
-    agent = load_agent(opts.RL_agent)(opts)
+    # Initialize the model
+    model = Actor(
+        input_dim = opts.input_dim,
+        embedding_dim = opts.embedding_dim,
+        num_harmonics = opts.num_harmonics,
+        frequency_scaling = opts.frequency_scaling,
+        mamba_hidden_dim = opts.mamba_hidden_dim,
+        mamba_layers = opts.mamba_layers,
+        num_attention_heads = opts.num_attention_heads,
+        gs_tau = opts.gs_tau_initial,
+        gs_iters = opts.gs_iters,
+        method = opts.tour_method,
+    ).to(opts.device)
 
-    # Load model checkpoint if specified
-    if opts.load_path is not None:
-        agent.load(opts.load_path)
+    # Initialize optimizer and learning rate scheduler
+    optimizer = optim.Adam(model.parameters(), lr=opts.initial_lr)
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: opts.lr_decay ** epoch)
 
-    # Check if to evaluate only or train the model
+    # Start the actual training/inference loop
+    val_dataset = problem.make_dataset(
+        size=opts.graph_size, num_samples=opts.eval_size, filename=opts.val_dataset)
+    train_dataset = problem.make_dataset(
+        size=opts.graph_size, num_samples=opts.problem_size)
+
     if opts.eval_only:
-        # Start inference
-        agent.evaluate(problem)        
+        validate(model, val_dataset, opts)
     else:
-        # Start training
-        agent.train(problem)
+        for epoch in range(opts.n_epochs):
+            train_epoch(model, optimizer, scheduler, epoch, train_dataset, val_dataset, opts)
 
 
 if __name__ == "__main__":

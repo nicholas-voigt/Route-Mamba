@@ -208,7 +208,8 @@ class AttentionScoreHead(nn.Module):
         self.ffn_norm = nn.LayerNorm(model_dim)
         self.ffn_dropout = nn.Dropout(dropout)
 
-        self.projection = nn.Linear(model_dim, model_dim)  # Final projection to score matrix dimension
+        self.query_projection = nn.Linear(model_dim, model_dim)  # Final projection to score matrix dimension
+        self.key_projection = nn.Linear(model_dim, model_dim)  # Final projection to score matrix dimension
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -231,8 +232,8 @@ class AttentionScoreHead(nn.Module):
         # Residual connection
         x = x + self.ffn_dropout(ffn_output)
         # Feature projection to get query and key for score calculation
-        query = self.projection(x)   # [B, N, model_dim]
-        key = self.projection(x)     # [B, N, model_dim]
+        query = self.query_projection(x)   # [B, N, model_dim]
+        key = self.key_projection(x)     # [B, N, model_dim]
         # Score matrix calculation via dot product
         scores = torch.matmul(query, key.transpose(1, 2))  # [B, N, N]
         return scores
