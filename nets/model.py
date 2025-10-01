@@ -141,6 +141,54 @@ class BidirectionalMambaEncoder(nn.Module):
         return torch.cat([x_fwd, x_bwd], dim=-1)  # (B, N, 4E)
 
 
+class ConvolutionBlock(nn.Module):
+    """
+    A standard residual block for 2D convolutions, inspired by ResNet.
+    Processes an image-like tensor (e.g., a permutation matrix).
+    The block structure is: Conv -> BN -> ReLU -> Conv -> BN -> Add -> ReLU
+    """
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int):
+        super().__init__()
+        padding = kernel_size // 2
+        self.relu = nn.ReLU(inplace=True)
+
+        # Main Path
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size, 1, padding, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+        # Residual Path
+        self.shortcut = nn.Identity()
+        if in_channels != out_channels or stride != 1:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (B, 1, N, N) - A 4D tensor representing a batch of images or feature maps.
+        Returns:
+            x: (B, C, N, N) - The processed tensor.
+        """
+        # Skip connection
+        identity = self.shortcut(x)
+        # Conv2D Layer 1
+        out = self.conv1(x)
+        out = self.bn1(out)
+        # ReLU Activation 1
+        out = self.relu(out)
+        # Conv2D Layer 2
+        out = self.conv2(out)
+        out = self.bn2(out)
+        # Residual connection and ReLU Activation 2
+        out += identity
+        out = self.relu(out)
+        return out
+
+
 class BilinearScoreHead(nn.Module):
     """
     Takes Mamba and cyclic features as input and builds a score matrix S for gumbel-sinkhorn soft permutation.
@@ -276,7 +324,7 @@ class GumbelSinkhornDecoder(nn.Module):
         # Sinkhorn normalization to get doubly stochastic matrix
         soft_perm = self.sinkhorn(scores)
         return soft_perm
-    
+
 
 class TourConstructor(nn.Module):
     """
