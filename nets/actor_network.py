@@ -43,7 +43,8 @@ class Actor(nn.Module):
         Args:
             batch: (B, N, I) - node features with 2D coordinates
         Returns:
-            st_perm: (B, N, I) - new tours
+            st_perm: (B, N, N) - doubly stochastic matrix (soft permutation matrix)
+            hard_perm: (B, N, N) - permutation matrix (hard assignment of the tour)
         """
         # 1. Create Embeddings
         node_embeddings, cyclic_embeddings = self.encoder(batch)  # (B, N, E), (B, N, E)
@@ -64,8 +65,6 @@ class Actor(nn.Module):
         soft_perm = self.decoder(score_matrix)  # (B, N, N)
 
         # 7. Decoder Workshop 2: Get the straight-through permutation matrix by hard assignment
-        st_perm = self.tour_constructor(soft_perm)
+        hard_perm = self.tour_constructor(soft_perm)
 
-        # 8. Compute new tour via straight-through permutation
-        new_tours = torch.bmm(st_perm.transpose(1, 2), batch)  # (B, N, I)
-        return new_tours
+        return soft_perm, hard_perm
