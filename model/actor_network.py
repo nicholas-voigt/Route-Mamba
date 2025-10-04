@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from nets.model import EmbeddingNet, BidirectionalMambaEncoder, GumbelSinkhornDecoder, AttentionScoreHead, TourConstructor
+from model.components import EmbeddingNet, BidirectionalMambaEncoder, GumbelSinkhornDecoder, AttentionScoreHead, TourConstructor
 
 
 class Actor(nn.Module):
