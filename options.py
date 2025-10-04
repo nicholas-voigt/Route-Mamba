@@ -12,24 +12,39 @@ def get_options(args=None):
     parser.add_argument('--problem', default='tsp', choices = ['vrp', 'tsp'], help="the targeted problem to solve, default 'tsp'")
     parser.add_argument('--graph_size', type=int, default=100, help="the number of customers in the targeted problem (graph size)")
     parser.add_argument('--problem_size', type=int, default=10000, help='number of problem instances for training')
-
     parser.add_argument('--seed', type=int, default=1234, help='random seed to use')
     
-    # Route-Mamba parameters
+    # Model parameters
+    ## Common
     parser.add_argument('--tour_heuristic', type=str, default='greedy', help='Heuristic for initial tour construction (greedy, random, farthest)')
+    parser.add_argument('--dropout', type=float, default=0.0, help='dropout rate for regularization (0 = no dropout)')
+    ## Embedding Network
     parser.add_argument('--input_dim', type=int, default=2, help='input dimension of the problem nodes')
     parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of embeddings for each, NFE & CE, has to be even')
-    parser.add_argument('--num_harmonics', type=int, default=16, help='number of harmonics for cyclic positional encoding')
+    parser.add_argument('--num_harmonics', type=int, default=16, help='number of harmonics for cyclic positional encoding (recommended: <= N/2)')
     parser.add_argument('--frequency_scaling', type=float, default=0.0, help='How the amplitude should decay for harmonics with larger frequencies (between 0 and 1)')
+    ## Mamba Encoder
     parser.add_argument('--mamba_hidden_dim', type=int, default=128, help='dimension of hidden state representation in Mamba')
     parser.add_argument('--mamba_layers', type=int, default=3, help='number of stacked Mamba blocks in the model')
+    ## Bilinear Score Head (alternative to attention score head)
     parser.add_argument('--score_head_dim', type=int, default=128, help='dimension of the bilinear score head to construct score matrix')
     parser.add_argument('--score_head_bias', type=bool, default=True, help='whether to use bias in score head')
+    ## Attention Score Head
     parser.add_argument('--num_attention_heads', type=int, default=8, help='number of attention heads in the model')
-    parser.add_argument('--gs_tau_initial', type=float, default=5.0, help='Gumbel-Sinkhorn initial temperature')
-    parser.add_argument('--gs_tau_final', type=float, default=0.5, help='Gumbel-Sinkhorn final temperature')
-    parser.add_argument('--gs_iters', type=int, default=20, help='Number of Sinkhorn iterations')
+    parser.add_argument('--ffn_expansion', type=int, default=4, help='expansion factor for the FFN in the attention score head')
+    ## Gumbel-Sinkhorn Decoder
+    parser.add_argument('--gs_tau_initial', type=float, default=2.0, help='Gumbel-Sinkhorn initial temperature')
+    parser.add_argument('--gs_tau_final', type=float, default=0.01, help='Gumbel-Sinkhorn final temperature')
+    parser.add_argument('--gs_iters', type=int, default=10, help='Number of Sinkhorn iterations')
+    ## Tour Constructor
     parser.add_argument('--tour_method', type=str, default='greedy', choices=['greedy', 'hungarian'], help='Method for tour construction')
+    ## Convolutional Encoder (critic)
+    parser.add_argument('--conv_out_channels', type=int, default=64, help='number of output channels for convolutional action encoder')
+    parser.add_argument('--conv_kernel_size', type=int, default=3, help='kernel size for convolutional action encoder')
+    parser.add_argument('--conv_stride', type=int, default=2, help='stride for convolutional action encoder')
+    ## MLP Value Decoder (critic)
+    parser.add_argument('--mlp_ff_dim', type=int, default=256, help='feed forward dimension for MLP value decoder')
+    parser.add_argument('--mlp_embedding_dim', type=int, default=128, help='embedding dimension for MLP value decoder')
 
     # Training parameters
     parser.add_argument('--RL_agent', default='surrogate', choices = ['surrogate'], help='RL Training algorithm')

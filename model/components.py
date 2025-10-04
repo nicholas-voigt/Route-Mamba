@@ -23,7 +23,7 @@ class EmbeddingNet(nn.Module):
         self.k = num_harmonics  # Number of harmonics
         self.alpha = alpha      # Scaling factor for frequency base
 
-    def cyclic_encoding(self, N: int, device: torch.device):
+    def cyclic_encoding(self, N: int, device: torch.device) -> torch.Tensor:
         """
         Cyclic embedding which incorporates relative positional information.
         Args:
@@ -44,7 +44,7 @@ class EmbeddingNet(nn.Module):
         emb = emb * a.repeat_interleave(2).unsqueeze(0)  # [N, 2k]
         return emb
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             x: (batch, N, node_dim) - node features
@@ -149,105 +149,8 @@ class BidirectionalMambaEncoder(nn.Module):
         return torch.cat([x_fwd, x_bwd], dim=-1)  # (B, N, 4E)
 
 
-class ConvolutionBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int):
-        """
-        A standard residual block for 2D convolutions, inspired by ResNet.
-        Processes an image-like tensor (e.g., a permutation matrix).
-        The block structure is: Conv -> BN -> ReLU -> Conv -> BN -> Add -> ReLU
-        Args:
-            in_channels: Number of input channels
-            out_channels: Number of output channels
-            kernel_size: Size of the convolutional kernel (assumed square)
-            stride: Stride for the first convolutional layer
-        """
-        super(ConvolutionBlock, self).__init__()
-        padding = kernel_size // 2
-        self.relu = nn.ReLU(inplace=True)
-
-        # Main Path
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size, 1, padding, bias=False)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-
-        # Residual Path
-        self.shortcut = nn.Identity()
-        if in_channels != out_channels or stride != 1:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_channels)
-            )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: (B, in_C, N, N) - A 4D tensor representing a batch of images or feature maps.
-        Returns:
-            x: (B, out_C, N, N) - The processed tensor.
-        """
-        # Skip connection
-        identity = self.shortcut(x)
-        # Conv2D Layer 1
-        out = self.conv1(x)
-        out = self.bn1(out)
-        # ReLU Activation 1
-        out = self.relu(out)
-        # Conv2D Layer 2
-        out = self.conv2(out)
-        out = self.bn2(out)
-        # Residual connection and ReLU Activation 2
-        out += identity
-        out = self.relu(out)
-        return out
-
-
-class MLP(nn.Module):
-    def __init__(self, input_dim = 128, feed_forward_dim = 64, embedding_dim = 64, output_dim = 1):
-        """
-        A simple feedforward neural network with 3 linear layers, ReLU activations, and dropout.
-        Designed for regression tasks, outputting a single scalar value.
-        Args:
-            input_dim: Dimension of the input features
-            feed_forward_dim: Dimension of the hidden layers
-            embedding_dim: Dimension of the second hidden layer
-            output_dim: Dimension of the output (1 for regression)
-        """
-        super(MLP, self).__init__()
-        self.fc1 = nn.Linear(input_dim, feed_forward_dim)
-        self.fc2 = nn.Linear(feed_forward_dim, embedding_dim)
-        self.fc3 = nn.Linear(embedding_dim, output_dim)
-        self.dropout = nn.Dropout(p=0.05)
-        self.ReLU = nn.ReLU(inplace = True)
-        
-        self.init_parameters()
-
-    def init_parameters(self):
-        for param in self.parameters():
-            stdv = 1. / math.sqrt(param.size(-1))
-            param.data.uniform_(-stdv, stdv)
-
-    def forward(self, x):
-        """
-        Args:
-            x: (B, input_dim) - A 2D tensor representing a batch of input features.
-        Returns:
-            out: (B,) - A 1D tensor representing the output scalar for each input in the batch.
-        """
-        # First layer with ReLU and dropout
-        out = self.fc1(x)
-        out = self.ReLU(out)
-        out = self.dropout(out)
-        # Second layer with ReLU
-        out = self.fc2(out)
-        out = self.ReLU(out)
-        # Final layer to output
-        out = self.fc3(out)
-        return out.squeeze(-1)
-
-
 class BilinearScoreHead(nn.Module):
-    def __init__(self, model_vector_size: int, cycle_vector_size: int, score_head_dim: int = 128, bias: bool = True):
+    def __init__(self, model_vector_size: int, cycle_vector_size: int, score_head_dim: int, bias: bool):
         """
         Takes Mamba and cyclic features as input and builds a score matrix S for gumbel-sinkhorn soft permutation.
         Build S in [B x N x N] from:
@@ -351,7 +254,7 @@ class AttentionScoreHead(nn.Module):
 
 
 class GumbelSinkhornDecoder(nn.Module):
-    def __init__(self, gs_tau, gs_iters):
+    def __init__(self, gs_tau: float, gs_iters: int):
         """
         Takes score matrix [B, N, N] as input,
         introduces Gumbel noise via sampling and scales scores according to temperature gs_tau,
@@ -365,7 +268,7 @@ class GumbelSinkhornDecoder(nn.Module):
         self.gs_iters = gs_iters
 
     # ---- Gumbel noise sampling ----
-    def sample_gumbel(self, shape, eps, device: torch.device):
+    def sample_gumbel(self, shape: torch.Size, eps: float, device: torch.device) -> torch.Tensor:
         U = torch.rand(shape, device=device)
         return -torch.log(-torch.log(U + eps) + eps)
 
@@ -458,7 +361,7 @@ class TourConstructor(nn.Module):
             hard_perm[b, ri, cj] = 1.0
         return hard_perm
 
-    def forward(self, soft_perm: torch.Tensor):
+    def forward(self, soft_perm: torch.Tensor) -> torch.Tensor:
         """
         Forward pass for the tour constructor. Converts a soft permutation matrix to hard permutation matrix using straight-through estimator.
         Forward pass uses hard permutation, backward pass uses soft permutation for gradient flow.
@@ -478,3 +381,100 @@ class TourConstructor(nn.Module):
         # ST trick for gradient flow
         straight_through_perm = hard_perm + (soft_perm - soft_perm.detach())
         return straight_through_perm
+
+
+class ConvolutionBlock(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int):
+        """
+        A standard residual block for 2D convolutions, inspired by ResNet.
+        Processes an image-like tensor (e.g., a permutation matrix).
+        The block structure is: Conv -> BN -> ReLU -> Conv -> BN -> Add -> ReLU
+        Args:
+            in_channels: Number of input channels
+            out_channels: Number of output channels
+            kernel_size: Size of the convolutional kernel (assumed square)
+            stride: Stride for the first convolutional layer
+        """
+        super(ConvolutionBlock, self).__init__()
+        padding = kernel_size // 2
+        self.relu = nn.ReLU(inplace=True)
+
+        # Main Path
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size, 1, padding, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+        # Residual Path
+        self.shortcut = nn.Identity()
+        if in_channels != out_channels or stride != 1:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (B, in_C, N, N) - A 4D tensor representing a batch of images or feature maps.
+        Returns:
+            x: (B, out_C, N, N) - The processed tensor.
+        """
+        # Skip connection
+        identity = self.shortcut(x)
+        # Conv2D Layer 1
+        out = self.conv1(x)
+        out = self.bn1(out)
+        # ReLU Activation 1
+        out = self.relu(out)
+        # Conv2D Layer 2
+        out = self.conv2(out)
+        out = self.bn2(out)
+        # Residual connection and ReLU Activation 2
+        out += identity
+        out = self.relu(out)
+        return out
+
+
+class MLP(nn.Module):
+    def __init__(self, input_dim: int, feed_forward_dim: int, embedding_dim: int, output_dim: int):
+        """
+        A simple feedforward neural network with 3 linear layers, ReLU activations, and dropout.
+        Designed for regression tasks, outputting a single scalar value.
+        Args:
+            input_dim: Dimension of the input features
+            feed_forward_dim: Dimension of the hidden layers
+            embedding_dim: Dimension of the second hidden layer
+            output_dim: Dimension of the output (1 for regression)
+        """
+        super(MLP, self).__init__()
+        self.fc1 = nn.Linear(input_dim, feed_forward_dim)
+        self.fc2 = nn.Linear(feed_forward_dim, embedding_dim)
+        self.fc3 = nn.Linear(embedding_dim, output_dim)
+        self.dropout = nn.Dropout(p=0.05)
+        self.ReLU = nn.ReLU(inplace = True)
+        
+        self.init_parameters()
+
+    def init_parameters(self):
+        for param in self.parameters():
+            stdv = 1. / math.sqrt(param.size(-1))
+            param.data.uniform_(-stdv, stdv)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (B, input_dim) - A 2D tensor representing a batch of input features.
+        Returns:
+            out: (B,) - A 1D tensor representing the output scalar for each input in the batch.
+        """
+        # First layer with ReLU and dropout
+        out = self.fc1(x)
+        out = self.ReLU(out)
+        out = self.dropout(out)
+        # Second layer with ReLU
+        out = self.fc2(out)
+        out = self.ReLU(out)
+        # Final layer to output
+        out = self.fc3(out)
+        return out.squeeze(-1)

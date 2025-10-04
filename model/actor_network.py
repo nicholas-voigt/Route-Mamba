@@ -6,7 +6,7 @@ from model.components import EmbeddingNet, BidirectionalMambaEncoder, GumbelSink
 
 class Actor(nn.Module):
     def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers, 
-                 num_attention_heads, gs_tau, gs_iters, method):
+                 num_attention_heads, ffn_expansion, gs_tau, gs_iters, method, dropout):
         super().__init__()
 
         # Model components
@@ -20,15 +20,15 @@ class Actor(nn.Module):
         self.model = BidirectionalMambaEncoder(
             mamba_model_size = 2 * embedding_dim,
             mamba_hidden_state_size = mamba_hidden_dim,
-            dropout = 0.1,
+            dropout = dropout,
             mamba_layers = mamba_layers
         )
         self.mamba_norm = nn.LayerNorm(4 * embedding_dim)
         self.score_constructor = AttentionScoreHead(
             model_dim = 4 * embedding_dim,
             num_heads = num_attention_heads,
-            ffn_expansion = 4,
-            dropout = 0.1
+            ffn_expansion = ffn_expansion,
+            dropout = dropout
         )
         self.decoder = GumbelSinkhornDecoder(
             gs_tau = gs_tau,

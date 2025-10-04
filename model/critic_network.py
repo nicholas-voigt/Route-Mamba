@@ -5,7 +5,7 @@ from model.components import EmbeddingNet, BidirectionalMambaEncoder, Convolutio
 
 
 class Critic(nn.Module):
-    def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers,
+    def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers, dropout,
                  conv_out_channels, conv_kernel_size, conv_stride, mlp_ff_dim, mlp_embedding_dim):
         super(Critic, self).__init__()
 
@@ -20,7 +20,7 @@ class Critic(nn.Module):
         self.state_encoder = BidirectionalMambaEncoder(
             mamba_model_size = 2 * embedding_dim,
             mamba_hidden_state_size = mamba_hidden_dim,
-            dropout = 0.1,
+            dropout = dropout,
             mamba_layers = mamba_layers
         )
 
