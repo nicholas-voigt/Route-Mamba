@@ -437,7 +437,7 @@ class ConvolutionBlock(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, input_dim: int, feed_forward_dim: int, embedding_dim: int, output_dim: int):
+    def __init__(self, input_dim: int, feed_forward_dim: int, embedding_dim: int, dropout: float, output_dim: int):
         """
         A simple feedforward neural network with 3 linear layers, ReLU activations, and dropout.
         Designed for regression tasks, outputting a single scalar value.
@@ -448,33 +448,20 @@ class MLP(nn.Module):
             output_dim: Dimension of the output (1 for regression)
         """
         super(MLP, self).__init__()
-        self.fc1 = nn.Linear(input_dim, feed_forward_dim)
-        self.fc2 = nn.Linear(feed_forward_dim, embedding_dim)
-        self.fc3 = nn.Linear(embedding_dim, output_dim)
-        self.dropout = nn.Dropout(p=0.05)
-        self.ReLU = nn.ReLU(inplace = True)
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, feed_forward_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=dropout),
+            nn.Linear(feed_forward_dim, embedding_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(embedding_dim, output_dim)
+        )
         
-        self.init_parameters()
-
-    def init_parameters(self):
-        for param in self.parameters():
-            stdv = 1. / math.sqrt(param.size(-1))
-            param.data.uniform_(-stdv, stdv)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
             x: (B, input_dim) - A 2D tensor representing a batch of input features.
         Returns:
-            out: (B,) - A 1D tensor representing the output scalar for each input in the batch.
+            out: (B, 1) - A tensor representing the output scalar for each input in the batch.
         """
-        # First layer with ReLU and dropout
-        out = self.fc1(x)
-        out = self.ReLU(out)
-        out = self.dropout(out)
-        # Second layer with ReLU
-        out = self.fc2(out)
-        out = self.ReLU(out)
-        # Final layer to output
-        out = self.fc3(out)
-        return out.squeeze(-1)
+        return self.network(x)

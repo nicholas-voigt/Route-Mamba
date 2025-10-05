@@ -36,6 +36,7 @@ class Critic(nn.Module):
             input_dim = 4 * embedding_dim + conv_out_channels,
             feed_forward_dim = mlp_ff_dim,
             embedding_dim = mlp_embedding_dim,
+            dropout = dropout,
             output_dim = 1
         )
 
@@ -45,8 +46,7 @@ class Critic(nn.Module):
         node_embeddings, cyclic_embeddings = self.state_embedder(state)  # (B, N, E), (B, N, E)
         state_embedding = self.state_embedding_norm(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))
         # 2. Mamba Workshop: Layered Mamba blocks with internal Pre-LN
-        state_embedding = self.state_encoder(state_embedding)   # (B, N, 2M)
-        state_embedding = state_embedding.mean(dim=1)  # (B, 2M)
+        state_embedding = self.state_encoder(state_embedding).mean(dim=1)   # (B, N, 2M) --> (B, 2M)
 
         # --- Process Action ---
         # 1. Reshape Action to include channel dimension
@@ -56,9 +56,6 @@ class Critic(nn.Module):
         action_embedding = action_embedding.view(action_embedding.size(0), -1)  # (B, C)
 
         # --- Decode Value ---
-        # 1. Concatenate State and Action Embeddings
-        q_embedding = torch.cat([state_embedding, action_embedding], dim=1)  # (B, 2M + C)
-        # 2. Value Decoder: MLP to produce scalar value
-        q = self.value_decoder(q_embedding)  # (B, 1)
-        return q
+        # MLP to output Q value from concatenated state and action embeddings
+        return self.value_decoder(torch.cat([state_embedding, action_embedding], dim=1))  # (B, 1)
 
