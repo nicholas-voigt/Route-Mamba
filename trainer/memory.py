@@ -17,7 +17,7 @@ class Memory:
 
         # Pre-allocate memory on the target device
         self.observations = torch.zeros((limit, *observation_shape), device=self.device, dtype=torch.float32)
-        self.discrete_actions = torch.zeros((limit, *action_shape), device=self.device, dtype=torch.bool)
+        self.discrete_actions = torch.zeros((limit, *action_shape), device=self.device, dtype=torch.float32)
         self.dense_actions = torch.zeros((limit, *action_shape), device=self.device, dtype=torch.float32)
         self.rewards = torch.zeros((limit, 1), device=self.device, dtype=torch.float32)
         
