@@ -33,9 +33,9 @@ def get_options(args=None):
     parser.add_argument('--num_attention_heads', type=int, default=8, help='number of attention heads in the model')
     parser.add_argument('--ffn_expansion', type=int, default=4, help='expansion factor for the FFN in the attention score head')
     ## Gumbel-Sinkhorn Decoder
-    parser.add_argument('--gs_tau_initial', type=float, default=2.0, help='Gumbel-Sinkhorn initial temperature')
-    parser.add_argument('--gs_tau_final', type=float, default=0.01, help='Gumbel-Sinkhorn final temperature')
-    parser.add_argument('--gs_iters', type=int, default=10, help='Number of Sinkhorn iterations')
+    parser.add_argument('--sinkhorn_tau', type=float, default=0.5, help='Sinkhorn temperature, higher = softer, lower = harder')
+    # parser.add_argument('--sinkhorn_tau_decay', type=float, default=0.9, help='Gumbel-Sinkhorn final temperature')
+    parser.add_argument('--sinkhorn_iters', type=int, default=10, help='Number of Sinkhorn iterations')
     ## Tour Constructor
     parser.add_argument('--tour_method', type=str, default='greedy', choices=['greedy', 'hungarian'], help='Method for tour construction')
     ## Convolutional Encoder (critic)
@@ -47,11 +47,15 @@ def get_options(args=None):
     parser.add_argument('--mlp_embedding_dim', type=int, default=128, help='embedding dimension for MLP value decoder')
 
     # Training parameters
-    parser.add_argument('--RL_agent', default='surrogate', choices = ['surrogate'], help='RL Training algorithm')
-    parser.add_argument('--n_epochs', type=int, default=50, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=500,help='number of instances per batch during training')
-    parser.add_argument('--initial_lr', type=float, default=1e-3, help="initial learning rate for the actor network")
-    parser.add_argument('--lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
+    parser.add_argument('--n_epochs', type=int, default=10, help='Number of training epochs')
+    parser.add_argument('--batch_size', type=int, default=256,help='number of instances per batch during training')
+    parser.add_argument('--buffer_size', type=int, default=100000, help='size of the replay buffer')
+    parser.add_argument('--actor_lr', type=float, default=1e-3, help="initial learning rate for the actor network")
+    parser.add_argument('--actor_lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
+    parser.add_argument('--critic_lr', type=float, default=1e-3, help="initial learning rate for the critic network")
+    parser.add_argument('--critic_lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
+    parser.add_argument('--reward_scale', type=float, default=1.0, help='scaling factor for reward signal')
+    parser.add_argument('--loss_weight', type=float, default=0.5, help='weighting factor between hard and soft critic loss (0 = only hard, 1 = only soft)')
 
     # Inference and validation parameters
     parser.add_argument('--eval_only', action='store_true', help='switch to inference mode')
@@ -59,7 +63,8 @@ def get_options(args=None):
     parser.add_argument('--val_dataset', type=str, default = './datasets/tsp_20_10000.pkl', help='dataset file path')
 
     # resume and load models
-    parser.add_argument('--load_path', default = None, help='path to load model parameters and optimizer state from')
+    parser.add_argument('--actor_load_path', default = None, help='path to load actor parameters from')
+    parser.add_argument('--critic_load_path', default = None, help='path to load critic parameters from')
     parser.add_argument('--resume', default = None, help='resume from previous checkpoint file')
     parser.add_argument('--epoch_start', type=int, default=0, help='start at epoch # (relevant for learning rate decay)')
 
@@ -75,7 +80,7 @@ def get_options(args=None):
     opts = parser.parse_args(args)
 
     # Some additional settings
-    opts.gs_anneal_rate = (opts.gs_tau_final / opts.gs_tau_initial) ** (1 / float(opts.n_epochs))  # exponential decay
+    # opts.sinkhorn_tau_decay = (opts.sinkhorn_tau_final / opts.sinkhorn_tau) ** (1 / float(opts.n_epochs))  # exponential decay
     
     # processing settings
     opts.use_cuda = torch.cuda.is_available()
