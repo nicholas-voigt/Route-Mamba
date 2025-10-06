@@ -54,9 +54,10 @@ srun whichgpu
 pip3 install --force-reinstall --no-cache-dir numpy
 pip3 install --force-reinstall --no-cache-dir scipy
 pip3 install --force-reinstall --no-cache-dir tqdm
-pip3 install --force-reinstall --no-cache-dir packaging # Required by mamba_ssm
+pip3 install --force-reinstall --no-cache-dir packaging # Required by mamba-ssm
+pip3 install --force-reinstall --no-cache-dir wheel # Required by mamba-ssm
 pip3 install --force-reinstall --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-pip3 install --force-reinstall --no-cache-dir --no-build-isolation mamba_ssm
+pip3 install --force-reinstall --no-cache-dir --no-build-isolation mamba-ssm
 
 # Submit your job to the cluster
 ## Parameters:
