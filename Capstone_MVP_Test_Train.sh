@@ -53,6 +53,8 @@ srun whichgpu
 # If you require any packages, install it as usual before the srun job submission.
 pip3 install --force-reinstall --no-cache-dir numpy
 pip3 install --force-reinstall --no-cache-dir scipy
+pip3 install --force-reinstall --no-cache-dir tqdm
+pip3 install --force-reinstall --no-cache-dir packaging # Required by mamba_ssm
 pip3 install --force-reinstall --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 pip3 install --force-reinstall --no-cache-dir --no-build-isolation mamba_ssm
 
