@@ -53,7 +53,7 @@ class Critic(nn.Module):
         action = action.unsqueeze(1)  # (B, 1, N, N)
         # 2. Convolutional Action Encoder: Apply Convolutional Blocks and Global Pooling
         action_embedding = self.action_encoder(action)  # (B, C, 1, 1)
-        action_embedding = action_embedding.view(action_embedding.size(0), -1)  # (B, C)
+        action_embedding = torch.flatten(action_embedding, start_dim=1)  # (B, C)
 
         # --- Decode Value ---
         # MLP to output Q value from concatenated state and action embeddings
