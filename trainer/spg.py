@@ -172,8 +172,8 @@ class SPGTrainer:
         # to provide a smooth gradient signal (via soft)
         self.critic_optimizer.zero_grad()
 
-        hard_Q = self.critic(sampled_obs, sampled_disc_actions)
-        soft_Q = self.critic(sampled_obs, sampled_dense_actions)
+        hard_Q = self.critic(sampled_obs, sampled_disc_actions.detach())
+        soft_Q = self.critic(sampled_obs, sampled_dense_actions.detach())
 
         critic_loss = (1 - self.opts.loss_weight) * F.mse_loss(hard_Q, sampled_rewards) + self.opts.loss_weight * F.mse_loss(soft_Q, sampled_rewards)
         logger['critic_loss'].append(critic_loss.item())
