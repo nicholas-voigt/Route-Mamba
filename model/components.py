@@ -137,7 +137,7 @@ class BidirectionalMambaEncoder(nn.Module):
             node_feats: (B, N, 4E)
         """
         # --- Forward Pass ---
-        x_fwd = x
+        x_fwd = x.clone()
         for mamba_layer in self.forward_block:
             x_fwd = mamba_layer(x_fwd)
         # --- Backward Pass ---
