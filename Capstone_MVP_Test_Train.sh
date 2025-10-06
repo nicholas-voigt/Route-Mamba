@@ -51,10 +51,10 @@ source ~/Capstone/bin/activate
 srun whichgpu
 
 # If you require any packages, install it as usual before the srun job submission.
-pip3 install -q numpy
-pip3 install -q scipy
-pip3 install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-pip3 install -q --no-build-isolation mamba_ssm
+pip3 install --force-reinstall --no-cache-dir numpy
+pip3 install --force-reinstall --no-cache-dir scipy
+pip3 install --force-reinstall --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip3 install --force-reinstall --no-cache-dir --no-build-isolation mamba_ssm
 
 # Submit your job to the cluster
 ## Parameters:
