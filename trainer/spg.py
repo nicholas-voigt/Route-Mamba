@@ -134,7 +134,7 @@ class SPGTrainer:
                 print(f"Saved actor and critic models at epoch {epoch + 1} to {self.opts.save_dir}")
 
 
-    def train_batch(self, batch, replay_buffer, logger):
+    def train_batch(self, batch: dict, replay_buffer: Memory, logger: dict):
         
         # --- ON-POLICY: Collect Experience ---
         ## get observations (initial tours) through heuristic from the environment
@@ -152,10 +152,10 @@ class SPGTrainer:
 
         ## Add experience to replay buffer & log statistics
         replay_buffer.append(
-            obs = initial_tours, 
-            discrete_action = discrete_actions, 
-            dense_action = dense_actions, 
-            reward = reward
+            observations = initial_tours, 
+            discrete_actions = discrete_actions, 
+            dense_actions = dense_actions, 
+            rewards = reward
         )
         logger['initial_tour_length'].append(initial_tour_lengths.mean().item())
         logger['new_tour_length'].append(new_tour_lengths.mean().item())

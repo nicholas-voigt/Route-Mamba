@@ -24,7 +24,7 @@ class Memory:
         self.position = 0
         self.size = 0
 
-    def append(self, observations: torch.Tensor, discrete_action: torch.Tensor, dense_actions: torch.Tensor, rewards: torch.Tensor):
+    def append(self, observations: torch.Tensor, discrete_actions: torch.Tensor, dense_actions: torch.Tensor, rewards: torch.Tensor):
         """
         Appends a batch of experiences to the buffer in a vectorized manner.
         """
@@ -35,7 +35,7 @@ class Memory:
         
         # Vectorized assignment - one large operation per tensor
         self.observations[indices] = observations
-        self.discrete_actions[indices] = discrete_action
+        self.discrete_actions[indices] = discrete_actions
         self.dense_actions[indices] = dense_actions
         self.rewards[indices] = rewards.unsqueeze(1) # Ensure rewards is (B, 1)
         
