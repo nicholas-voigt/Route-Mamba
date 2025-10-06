@@ -110,10 +110,10 @@ class SPGTrainer:
                 dataset=train_dataset,
                 batch_size=self.opts.batch_size,
             )
-            with torch.autograd.set_detect_anomaly(True):
-                for _, batch in enumerate(tqdm(training_dataloader, disable=self.opts.no_progress_bar)):
-                    self.train_batch(batch, replay_buffer, logger)
-            torch.autograd.set_detect_anomaly(False)
+
+            for _, batch in enumerate(tqdm(training_dataloader, disable=self.opts.no_progress_bar)):
+                self.train_batch(batch, replay_buffer, logger)
+
             epoch_duration = time.time() - start_time
             print(f"Training Epoch {epoch} completed. Results:")
             print(f"-  Epoch Runtime: {epoch_duration:.2f} s")
@@ -148,7 +148,7 @@ class SPGTrainer:
 
         ## Reward calculation, TODO: Include expected reward for soft actions?
         new_tour_lengths = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), initial_tours))
-        reward = (initial_tour_lengths - new_tour_lengths) * self.opts.reward_scale  # Apply reward scaling
+        reward = -new_tour_lengths * self.opts.reward_scale  # Apply reward scaling
 
         ## Add experience to replay buffer & log statistics
         replay_buffer.append(
@@ -172,11 +172,10 @@ class SPGTrainer:
         # to provide a smooth gradient signal (via soft)
         self.critic_optimizer.zero_grad()
 
-        # hard_Q = self.critic(sampled_obs, sampled_disc_actions.detach())
-        soft_Q = self.critic(sampled_obs, sampled_dense_actions.detach())
+        hard_Q = self.critic(sampled_obs, sampled_disc_actions)
+        soft_Q = self.critic(sampled_obs, sampled_dense_actions)
 
-        # critic_loss = (1 - self.opts.loss_weight) * F.mse_loss(hard_Q, sampled_rewards) + self.opts.loss_weight * F.mse_loss(soft_Q, sampled_rewards)
-        critic_loss = F.mse_loss(soft_Q, sampled_rewards)
+        critic_loss = (1 - self.opts.loss_weight) * F.mse_loss(hard_Q, sampled_rewards) + self.opts.loss_weight * F.mse_loss(soft_Q, sampled_rewards)
         logger['critic_loss'].append(critic_loss.item())
 
         critic_loss.backward()
@@ -187,10 +186,9 @@ class SPGTrainer:
         # for improved gradient signal. Generate new actions for the sampled observations.
         # Actor loss is computed as negative Q value to maximize expected reward.
         self.actor_optimizer.zero_grad()
-        self.critic_optimizer.zero_grad()
 
         new_dense_actions, _ = self.actor(sampled_obs)
-        actor_loss = -1 * self.critic(sampled_obs, new_dense_actions).mean()
+        actor_loss = -self.critic(sampled_obs, new_dense_actions).mean()
         logger['actor_loss'].append(actor_loss.item())
 
         actor_loss.backward()
