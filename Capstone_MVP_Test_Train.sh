@@ -57,4 +57,36 @@ pip3 install -q torch torchvision torchaudio
 pip3 install -q mamba_ssm
 
 # Submit your job to the cluster
-srun --gres=gpu:1 python run.py --graph_size 20 --tour_heuristic random --tour_method greedy --n_epochs 20 --no_progress_bar
+## Parameters:
+GRAPH_SIZE = 100
+PROBLEM_SIZE = 100000
+N_EPOCHS = 10
+BATCH_SIZE = 256
+BUFFER_SIZE = 10000
+TOUR_HEURISTIC = "random"
+ACTOR_LR = 1e-4
+ACTOR_LR_DECAY = 0.99
+CRITIC_LR = 1e-4
+CRITIC_LR_DECAY = 0.99
+REWARD_SCALE = 1.0
+LOSS_WEIGHT = 0.5
+
+DROPOUT = 0.0
+EMBEDDING_DIM = 32
+NUM_HARMONICS = 32
+MAMBA_HIDDEN_DIM = 128
+MAMBA_LAYERS = 3
+SCORE_HEAD_DIM = 128
+SCORE_HEAD_BIAS = True
+NUM_ATTENTION_HEADS = 8
+FFN_EXPANSION = 4
+SINKHORN_TAU = 0.5
+SINKHORN_ITERS = 10
+TOUR_METHOD = "greedy"
+CONV_OUT_CHANNELS = 128
+CONV_KERNEL_SIZE = 3
+CONV_STRIDE = 1
+MLP_FF_DIM = 512
+MLP_EMBEDDING_DIM = 128
+
+srun --gres=gpu:1 python run.py --graph_size GRAPH_SIZE --problem_size PROBLEM_SIZE --n_epochs N_EPOCHS --batch_size BATCH_SIZE --buffer_size BUFFER_SIZE --tour_heuristic TOUR_HEURISTIC --actor_lr ACTOR_LR --actor_lr_decay ACTOR_LR_DECAY --critic_lr CRITIC_LR --critic_lr_decay CRITIC_LR_DECAY --reward_scale REWARD_SCALE --loss_weight LOSS_WEIGHT --dropout DROPOUT --embedding_dim EMBEDDING_DIM --num_harmonics NUM_HARMONICS --mamba_hidden_dim MAMBA_HIDDEN_DIM --mamba_layers MAMBA_LAYERS --score_head_dim SCORE_HEAD_DIM --score_head_bias SCORE_HEAD_BIAS --num_attention_heads NUM_ATTENTION_HEADS --ffn_expansion FFN_EXPANSION --sinkhorn_tau SINKHORN_TAU --sinkhorn_iters SINKHORN_ITERS --tour_method TOUR_METHOD --conv_out_channels CONV_OUT_CHANNELS --conv_kernel_size CONV_KERNEL_SIZE --conv_stride CONV_STRIDE --mlp_ff_dim MLP_FF_DIM --mlp_embedding_dim MLP_EMBEDDING_DIM
