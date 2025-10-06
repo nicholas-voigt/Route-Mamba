@@ -406,12 +406,10 @@ class ConvolutionBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(out_channels)
 
         # Residual Path
-        self.shortcut = nn.Identity()
-        if in_channels != out_channels or stride != 1:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_channels)
-            )
+        self.shortcut = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+            nn.BatchNorm2d(out_channels)
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
