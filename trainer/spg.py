@@ -142,7 +142,7 @@ class SPGTrainer:
         ## Actor forward pass & tour construction & reward calculation, TODO: Include epsilon-greedy exploration here
         dense_actions, discrete_actions = self.actor(observation)
 
-        ## Reward calculation, TODO: Include expected reward for soft actions?
+        ## Reward calculation using soft actions (tour distributions)
         reward = -1 * compute_euclidean_tour(torch.bmm(dense_actions.transpose(1, 2), observation)) * self.opts.reward_scale  # Apply reward scaling
         actual_tour_lengths = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
 
@@ -167,10 +167,11 @@ class SPGTrainer:
         # to provide a smooth gradient signal (via soft)
         self.critic_optimizer.zero_grad()
 
-        hard_Q = self.critic(sampled_obs, sampled_disc_actions)
+        # hard_Q = self.critic(sampled_obs, sampled_disc_actions)
         soft_Q = self.critic(sampled_obs, sampled_dense_actions)
 
-        critic_loss = (1 - self.opts.loss_weight) * F.mse_loss(hard_Q, sampled_rewards) + self.opts.loss_weight * F.mse_loss(soft_Q, sampled_rewards)
+        # critic_loss = (1 - self.opts.loss_weight) * F.mse_loss(hard_Q, sampled_rewards) + self.opts.loss_weight * F.mse_loss(soft_Q, sampled_rewards)
+        critic_loss = F.mse_loss(soft_Q, sampled_rewards)
         logger['critic_loss'].append(critic_loss.item())
 
         critic_loss.backward()
