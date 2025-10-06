@@ -186,6 +186,7 @@ class SPGTrainer:
         # for improved gradient signal. Generate new actions for the sampled observations.
         # Actor loss is computed as negative Q value to maximize expected reward.
         self.actor_optimizer.zero_grad()
+        self.critic_optimizer.zero_grad()
 
         new_dense_actions, _ = self.actor(sampled_obs)
         actor_loss = -1 * self.critic(sampled_obs, new_dense_actions).mean()
