@@ -397,7 +397,7 @@ class ConvolutionBlock(nn.Module):
         """
         super(ConvolutionBlock, self).__init__()
         padding = kernel_size // 2
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU()
 
         # Main Path
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False)
@@ -431,7 +431,7 @@ class ConvolutionBlock(nn.Module):
         out = self.conv2(out)
         out = self.bn2(out)
         # Residual connection and ReLU Activation 2
-        out += identity
+        out = out + identity
         out = self.relu(out)
         return out
 
@@ -450,10 +450,10 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         self.network = nn.Sequential(
             nn.Linear(input_dim, feed_forward_dim),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Dropout(p=dropout),
             nn.Linear(feed_forward_dim, embedding_dim),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Linear(embedding_dim, output_dim)
         )
         
