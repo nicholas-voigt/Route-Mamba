@@ -110,7 +110,6 @@ class SPGTrainer:
                 dataset=train_dataset,
                 batch_size=self.opts.batch_size,
             )
-            torch.autograd.set_detect_anomaly(True)
 
             for _, batch in enumerate(tqdm(training_dataloader, disable=self.opts.no_progress_bar)):
                 self.train_batch(batch, replay_buffer, logger)
@@ -136,7 +135,7 @@ class SPGTrainer:
 
 
     def train_batch(self, batch: dict, replay_buffer: Memory, logger: dict):
-        
+        torch.autograd.set_detect_anomaly(True)
         # --- ON-POLICY: Collect Experience ---
         ## get observations (initial tours) through heuristic from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
