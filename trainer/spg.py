@@ -110,10 +110,10 @@ class SPGTrainer:
                 dataset=train_dataset,
                 batch_size=self.opts.batch_size,
             )
-
-            for _, batch in enumerate(tqdm(training_dataloader, disable=self.opts.no_progress_bar)):
-                self.train_batch(batch, replay_buffer, logger)
-
+            with torch.autograd.set_detect_anomaly(True):
+                for _, batch in enumerate(tqdm(training_dataloader, disable=self.opts.no_progress_bar)):
+                    self.train_batch(batch, replay_buffer, logger)
+            torch.autograd.set_detect_anomaly(False)
             epoch_duration = time.time() - start_time
             print(f"Training Epoch {epoch} completed. Results:")
             print(f"-  Epoch Runtime: {epoch_duration:.2f} s")
@@ -135,7 +135,7 @@ class SPGTrainer:
 
 
     def train_batch(self, batch: dict, replay_buffer: Memory, logger: dict):
-        torch.autograd.set_detect_anomaly(True)
+
         # --- ON-POLICY: Collect Experience ---
         ## get observations (initial tours) through heuristic from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
@@ -196,7 +196,6 @@ class SPGTrainer:
         actor_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1.0)
         self.actor_optimizer.step()
-        torch.autograd.set_detect_anomaly(False)
 
 
     def start_evaluation(self, problem):
