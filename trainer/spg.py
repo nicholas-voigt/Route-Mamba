@@ -172,13 +172,14 @@ class SPGTrainer:
         # to provide a smooth gradient signal (via soft)
         self.critic_optimizer.zero_grad()
 
-        hard_Q = self.critic(sampled_obs, sampled_disc_actions.detach())
+        # hard_Q = self.critic(sampled_obs, sampled_disc_actions.detach())
         soft_Q = self.critic(sampled_obs, sampled_dense_actions.detach())
 
-        critic_loss = (1 - self.opts.loss_weight) * F.mse_loss(hard_Q, sampled_rewards) + self.opts.loss_weight * F.mse_loss(soft_Q, sampled_rewards)
+        # critic_loss = (1 - self.opts.loss_weight) * F.mse_loss(hard_Q, sampled_rewards) + self.opts.loss_weight * F.mse_loss(soft_Q, sampled_rewards)
+        critic_loss = F.mse_loss(soft_Q, sampled_rewards)
         logger['critic_loss'].append(critic_loss.item())
 
-        critic_loss.backward(retain_graph=True)
+        critic_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
         self.critic_optimizer.step()
 
