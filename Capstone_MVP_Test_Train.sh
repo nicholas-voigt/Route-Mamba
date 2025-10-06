@@ -41,7 +41,7 @@ module load Python/3.13.1-GCCcore-13.3.0
 module load cuDNN/9.5.0.50-CUDA-12.6.0
 
 # Create a virtual environment can be commented off if you already have a virtual environment
-python3 -m venv ~/Capstone
+# python3 -m venv ~/Capstone
 
 # This command assumes that you've already created the environment previously
 # We're using an absolute path here. You may use a relative path, as long as SRUN is execute in the same working directory
@@ -51,13 +51,13 @@ source ~/Capstone/bin/activate
 srun whichgpu
 
 # If you require any packages, install it as usual before the srun job submission.
-pip3 install --force-reinstall --no-cache-dir numpy
-pip3 install --force-reinstall --no-cache-dir scipy
-pip3 install --force-reinstall --no-cache-dir tqdm
-pip3 install --force-reinstall --no-cache-dir packaging # Required by mamba-ssm
-pip3 install --force-reinstall --no-cache-dir wheel # Required by mamba-ssm
-pip3 install --force-reinstall --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-pip3 install --force-reinstall --no-cache-dir --no-build-isolation mamba-ssm
+pip3 install -q --no-cache-dir numpy
+pip3 install -q --no-cache-dir scipy
+pip3 install -q --no-cache-dir tqdm
+pip3 install -q --no-cache-dir packaging # Required by mamba-ssm
+pip3 install -q --no-cache-dir wheel # Required by mamba-ssm
+pip3 install -q --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip3 install -q --no-cache-dir --no-build-isolation mamba-ssm
 
 # Submit your job to the cluster
 ## Parameters:

@@ -92,7 +92,7 @@ class SPGTrainer:
             print(f"\nTraining Epoch {epoch}:")
             print(f"-  Replay Buffer Size: {len(replay_buffer)}")
             print(f"-  Actor Learning Rate: {self.actor_optimizer.param_groups[0]['lr']:.6f}")
-            print(f"-  Actor Sinkhorn Temperature: {self.actor.gs_tau:.6f}")
+            print(f"-  Actor Sinkhorn Temperature: {self.actor.decoder.gs_tau:.6f}")
             print(f"-  Critic Learning Rate: {self.critic_optimizer.param_groups[0]['lr']:.6f}")
 
             logger = {
@@ -124,7 +124,7 @@ class SPGTrainer:
             print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
 
             # update learning rate and sinkhorn temperature
-            self.actor.sinkhorn_tau *= self.opts.sinkhorn_tau_decay
+            # self.actor.decoder.gs_tau *= self.opts.sinkhorn_tau_decay
             self.actor_scheduler.step()
             self.critic_scheduler.step()
 
