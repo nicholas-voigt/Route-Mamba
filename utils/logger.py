@@ -79,3 +79,23 @@ def log_to_tb_train(tb_logger, agent, Reward, ratios, bl_val_detached, total_cos
     
     tb_logger.log_value('grad/critic', grad_norms[1], mini_step)
     tb_logger.log_value('grad_clipped/critic', grad_norms_clipped[1], mini_step)
+
+
+def log_gradients(model):
+    # Gradient existence check (for debugging) 
+    found_grads = 0
+    vanishing_grads = 0
+    total_params = len(list(model.parameters()))
+    grad_norms = {}
+
+    for name, param in model.named_parameters():
+        if param.grad is not None:
+            vanishing_grads += (param.grad.data.norm(2).item() <= 0.001)
+            found_grads += 1
+            grad_norms[name] = param.grad.data.norm(2).item()
+
+    print(f"\nGradient check for model: {model.__class__.__name__}")
+    print(f"Found gradients for {found_grads}/{total_params} parameters, {vanishing_grads} with vanishing gradients.")
+    print("Gradient norms:")
+    for name, norm in grad_norms.items():
+        print(f"  {name}: {norm:.6f}")

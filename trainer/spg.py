@@ -9,6 +9,7 @@ from model.actor_network import Actor
 from model.critic_network import Critic
 from trainer.memory import Memory
 from utils.utils import compute_euclidean_tour, get_initial_tours
+from utils.logger import log_gradients
 
 
 class SPGTrainer:
@@ -109,6 +110,7 @@ class SPGTrainer:
                 dataset=train_dataset,
                 batch_size=self.opts.batch_size,
             )
+            self.gradient_check = True
 
             for _, batch in enumerate(tqdm(training_dataloader, disable=self.opts.no_progress_bar)):
                 self.train_batch(batch, replay_buffer, logger)
@@ -176,6 +178,8 @@ class SPGTrainer:
 
         critic_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
+        if self.gradient_check:
+            log_gradients(self.critic)
         self.critic_optimizer.step()
 
         # Actor Update - compute policy gradient loss using the soft actions
@@ -189,6 +193,9 @@ class SPGTrainer:
 
         actor_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1.0)
+        if self.gradient_check:
+            log_gradients(self.actor)
+        self.gradient_check = False
         self.actor_optimizer.step()
 
 
