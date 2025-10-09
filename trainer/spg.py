@@ -51,9 +51,6 @@ class SPGTrainer:
                 mamba_hidden_dim = opts.mamba_hidden_dim,
                 mamba_layers = opts.mamba_layers,
                 dropout = opts.dropout,
-                conv_out_channels = opts.conv_out_channels,
-                conv_kernel_size = opts.conv_kernel_size,
-                conv_stride = opts.conv_stride,
                 mlp_ff_dim = opts.mlp_ff_dim,
                 mlp_embedding_dim = opts.mlp_embedding_dim
             ).to(opts.device)
@@ -124,7 +121,7 @@ class SPGTrainer:
             print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
 
             # update learning rate and sinkhorn temperature
-            # self.actor.decoder.gs_tau *= self.opts.sinkhorn_tau_decay
+            self.actor.decoder.gs_tau *= self.opts.sinkhorn_tau_decay
             self.actor_scheduler.step()
             self.critic_scheduler.step()
 

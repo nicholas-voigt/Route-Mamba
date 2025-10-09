@@ -34,7 +34,7 @@ def get_options(args=None):
     parser.add_argument('--ffn_expansion', type=int, default=4, help='expansion factor for the FFN in the attention score head')
     ## Gumbel-Sinkhorn Decoder
     parser.add_argument('--sinkhorn_tau', type=float, default=0.5, help='Sinkhorn temperature, higher = softer, lower = harder')
-    # parser.add_argument('--sinkhorn_tau_decay', type=float, default=0.9, help='Gumbel-Sinkhorn final temperature')
+    parser.add_argument('--sinkhorn_tau_decay', type=float, default=0.9, help='Sinkhorn temperature decay rate per epoch')
     parser.add_argument('--sinkhorn_iters', type=int, default=10, help='Number of Sinkhorn iterations')
     ## Tour Constructor
     parser.add_argument('--tour_method', type=str, default='greedy', choices=['greedy', 'hungarian'], help='Method for tour construction')
@@ -79,9 +79,6 @@ def get_options(args=None):
     
     opts = parser.parse_args(args)
 
-    # Some additional settings
-    # opts.sinkhorn_tau_decay = (opts.sinkhorn_tau_final / opts.sinkhorn_tau) ** (1 / float(opts.n_epochs))  # exponential decay
-    
     # processing settings
     opts.use_cuda = torch.cuda.is_available()
     opts.P = 250 if opts.eval_only else 1e10 # can set to smaller values e.g., 20 or 10, for generalization 
