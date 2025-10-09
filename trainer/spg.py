@@ -116,6 +116,7 @@ class SPGTrainer:
             epoch_duration = time.time() - start_time
             print(f"Training Epoch {epoch} completed. Results:")
             print(f"-  Epoch Runtime: {epoch_duration:.2f}s")
+            print(f"-  Average Initial Tour Length: {sum(logger['initial_tour_length'])/len(logger['initial_tour_length']):.4f}")
             print(f"-  Average Actual Tour Length: {sum(logger['actual_tour_length'])/len(logger['actual_tour_length']):.4f}")
             print(f"-  Average Reward: {sum(logger['reward'])/len(logger['reward']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
