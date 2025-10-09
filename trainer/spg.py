@@ -94,6 +94,7 @@ class SPGTrainer:
             print(f"-  Critic Learning Rate: {self.critic_optimizer.param_groups[0]['lr']:.6f}")
 
             logger = {
+                'initial_tour_length': [],
                 'actual_tour_length': [],
                 'reward': [],
                 'actor_loss': [],
@@ -136,7 +137,10 @@ class SPGTrainer:
         # --- ON-POLICY: Collect Experience ---
         ## get observations (initial tours) through heuristic from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
-        observation = batch['coordinates']
+        coords = batch['coordinates']
+
+        observation = get_initial_tours(coords, self.opts.tour_heuristic)
+        initial_tour_lengths = compute_euclidean_tour(observation)
 
         ## Actor forward pass & tour construction & reward calculation, TODO: Include epsilon-greedy exploration here
         dense_actions, discrete_actions = self.actor(observation)
@@ -144,7 +148,7 @@ class SPGTrainer:
         ## Reward calculation using soft actions (tour distributions)
         # reward = -1 * compute_euclidean_tour(torch.bmm(dense_actions.transpose(1, 2), observation)) * self.opts.reward_scale  # Apply reward scaling
         actual_tour_lengths = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
-        reward = -actual_tour_lengths * self.opts.reward_scale  # Apply reward scaling
+        reward = (initial_tour_lengths - actual_tour_lengths) * self.opts.reward_scale  # Apply reward scaling
 
         ## Add experience to replay buffer & log statistics
         replay_buffer.append(
@@ -153,6 +157,7 @@ class SPGTrainer:
             dense_actions = dense_actions.detach(), 
             rewards = reward.detach()
         )
+        logger['initial_tour_length'].append(initial_tour_lengths.mean().item())
         logger['actual_tour_length'].append(actual_tour_lengths.mean().item())
         logger['reward'].append(reward.mean().item())
 
