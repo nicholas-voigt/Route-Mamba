@@ -34,7 +34,7 @@ class Critic(nn.Module):
 
         # Value Decoder
         self.value_decoder = MLP(
-            input_dim = 8 * embedding_dim,
+            input_dim = 4 * embedding_dim,
             feed_forward_dim = mlp_ff_dim,
             embedding_dim = mlp_embedding_dim,
             dropout = dropout,
