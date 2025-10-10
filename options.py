@@ -32,6 +32,7 @@ def get_options(args=None):
     ## Attention Score Head
     parser.add_argument('--num_attention_heads', type=int, default=8, help='number of attention heads in the model')
     parser.add_argument('--ffn_expansion', type=int, default=4, help='expansion factor for the FFN in the attention score head')
+    parser.add_argument('--initial_identity_bias', type=float, default=10.0, help='initial bias to add to diagonal of score matrix to discourage self-loops')
     ## Gumbel-Sinkhorn Decoder
     parser.add_argument('--sinkhorn_tau', type=float, default=0.5, help='Sinkhorn temperature, higher = softer, lower = harder')
     parser.add_argument('--sinkhorn_tau_decay', type=float, default=0.9, help='Sinkhorn temperature decay rate per epoch')

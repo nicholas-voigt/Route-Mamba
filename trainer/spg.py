@@ -30,6 +30,7 @@ class SPGTrainer:
                 mamba_layers = opts.mamba_layers,
                 num_attention_heads = opts.num_attention_heads,
                 ffn_expansion = opts.ffn_expansion,
+                initial_identity_bias = opts.initial_identity_bias,
                 gs_tau = opts.sinkhorn_tau,
                 gs_iters = opts.sinkhorn_iters,
                 method = opts.tour_method,

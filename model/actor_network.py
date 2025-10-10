@@ -6,7 +6,7 @@ from model.components import EmbeddingNet, BidirectionalMambaEncoder, GumbelSink
 
 class Actor(nn.Module):
     def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers, 
-                 num_attention_heads, ffn_expansion, gs_tau, gs_iters, method, dropout):
+                 num_attention_heads, ffn_expansion, initial_identity_bias, gs_tau, gs_iters, method, dropout):
         super().__init__()
 
         # Model components
@@ -30,6 +30,7 @@ class Actor(nn.Module):
             ffn_expansion = ffn_expansion,
             dropout = dropout
         )
+        self.identity_bias = nn.Parameter(torch.full((1,), initial_identity_bias))
         self.decoder = GumbelSinkhornDecoder(
             gs_tau = gs_tau,
             gs_iters = gs_iters
@@ -60,9 +61,11 @@ class Actor(nn.Module):
 
         # 5. Attention Workshop: Multi-Head Attention with FFN and internal Pre-LN and projection to scores
         score_matrix = self.score_constructor(norm_mamba_feats)  # (B, N, N)
+        identity_matrix = torch.eye(score_matrix.size(1), device=score_matrix.device) * self.identity_bias
+        biased_score_matrix = score_matrix + identity_matrix
 
         # 6. Decoder Workshop 1: Use Gumbel-Sinkhorn to get soft permutation matrix (tour)
-        soft_perm = self.decoder(score_matrix)  # (B, N, N)
+        soft_perm = self.decoder(biased_score_matrix)  # (B, N, N)
 
         # 7. Decoder Workshop 2: Get the straight-through permutation matrix by hard assignment
         hard_perm = self.tour_constructor(soft_perm)
