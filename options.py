@@ -57,6 +57,7 @@ def get_options(args=None):
     parser.add_argument('--critic_lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
     parser.add_argument('--reward_scale', type=float, default=1.0, help='scaling factor for reward signal')
     parser.add_argument('--loss_weight', type=float, default=0.5, help='weighting factor between hard and soft critic loss (0 = only hard, 1 = only soft)')
+    parser.add_argument('--epsilon', type=float, default=0.1, help='epsilon value for epsilon-greedy exploration')
 
     # Inference and validation parameters
     parser.add_argument('--eval_only', action='store_true', help='switch to inference mode')
