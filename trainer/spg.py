@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import time
 from tqdm import tqdm
 
-from model.actor_network import Actor
+from model.actor_network import SinkhornPermutationActor
 from model.critic_network import Critic
 from trainer.memory import Memory
 from utils.utils import compute_euclidean_tour, get_initial_tours
@@ -21,7 +21,7 @@ class SPGTrainer:
             print(f"Loading actor model from {opts.actor_load_path}")
             self.actor = torch.load(opts.actor_load_path, map_location=opts.device)
         else:
-            self.actor = Actor(
+            self.actor = SinkhornPermutationActor(
                 input_dim = opts.input_dim,
                 embedding_dim = opts.embedding_dim,
                 num_harmonics = opts.num_harmonics,
