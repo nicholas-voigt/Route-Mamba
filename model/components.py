@@ -7,18 +7,23 @@ from mamba_ssm import Mamba
 
 
 class EmbeddingNet(nn.Module):
-    """
-    Embedding Network for node features.
-    Performs node feature embedding and cyclic positional encoding.
-    """
     def __init__(self, input_dim: int, embedding_dim: int, num_harmonics: int, alpha: float):
-        super().__init__()
+        """
+        Embedding Network for node features.
+        Performs node feature embedding and cyclic positional encoding.
+        Args:
+            input_dim: Dimension of input node features (e.g., 2 for 2D coordinates)
+            embedding_dim: Dimension of the output embeddings (node and cyclic respectively)
+            num_harmonics: Number of harmonics for cyclic encoding (recommended: <= N/2)
+            alpha: Scaling factor for frequency base
+        """
+        super(EmbeddingNet, self).__init__()
         self.node_feature_encoder = nn.Linear(input_dim, embedding_dim, bias=False)   # Linear layer for node feature embedding
         self.cyclic_projection = nn.Linear(2 * num_harmonics, embedding_dim, bias=False)  # Linear layer to project harmonics to Embedding space
         self.k = num_harmonics  # Number of harmonics
         self.alpha = alpha      # Scaling factor for frequency base
 
-    def cyclic_encoding(self, N: int, device: torch.device):
+    def cyclic_encoding(self, N: int, device: torch.device) -> torch.Tensor:
         """
         Cyclic embedding which incorporates relative positional information.
         Args:
@@ -39,7 +44,7 @@ class EmbeddingNet(nn.Module):
         emb = emb * a.repeat_interleave(2).unsqueeze(0)  # [N, 2k]
         return emb
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             x: (batch, N, node_dim) - node features
@@ -56,13 +61,17 @@ class EmbeddingNet(nn.Module):
 
 
 class MambaBlock(nn.Module):
-    """
-    Single Mamba Block for the TSP model. Designed with reference to the Attention Encoder Layer.
-    Applies Pre-LN: LayerNorm -> Mamba -> Dropout -> Residual
-    Takes concatenated node and cyclic embeddings as input and outputs a score for each node.
-    """
     def __init__(self, mamba_model_size: int, mamba_hidden_state_size: int, dropout: float):
-        super().__init__()
+        """
+        Single Mamba Block for the TSP model. Designed with reference to the Attention Encoder Layer.
+        Applies Pre-LN: LayerNorm -> Mamba -> Dropout -> Residual
+        Takes concatenated node and cyclic embeddings as input and outputs a score for each node. Does not change vector dimensions.
+        Args:
+            mamba_model_size: Model dimension for Mamba (d_model), defined by input size
+            mamba_hidden_state_size: SSM state expansion factor (d_state)
+            dropout: Dropout rate for regularization
+        """
+        super(MambaBlock, self).__init__()
         self.mamba = Mamba(
             d_model=mamba_model_size,
             d_state=mamba_hidden_state_size,
@@ -100,18 +109,17 @@ class MambaBlock(nn.Module):
 
 
 class BidirectionalMambaEncoder(nn.Module):
-    """
-    Mamba Implementation for the TSP model.
-    Takes concatenated node and cyclic embeddings as input and outputs a score for each node.
-    """
     def __init__(self, mamba_model_size: int, mamba_hidden_state_size: int, dropout: float, mamba_layers: int):
         """
+        Mamba Implementation for the TSP model.
+        Takes concatenated node and cyclic embeddings as input and outputs a score for each node.
         Args:
             mamba_model_size: Model dimension for Mamba (d_model), defined by input size
             mamba_hidden_state_size: SSM state expansion factor (d_state)
+            dropout: Dropout rate for regularization
             mamba_layers: Number of Mamba blocks stacked (min: 1)
         """
-        super().__init__()
+        super(BidirectionalMambaEncoder, self).__init__()
 
         self.forward_block = nn.ModuleList([
             MambaBlock(mamba_model_size, mamba_hidden_state_size, dropout) for _ in range(mamba_layers)
@@ -142,16 +150,16 @@ class BidirectionalMambaEncoder(nn.Module):
 
 
 class BilinearScoreHead(nn.Module):
-    """
-    Takes Mamba and cyclic features as input and builds a score matrix S for gumbel-sinkhorn soft permutation.
-    Build S in [B x N x N] from:
-      E = mamba_features in [B x N x 4E]
-      R = cyclic_feats    in [B x N x E]
-      W = bilinear_weights in [d_head x d_head]
-    via S = (E U_e) W (R U_r)^T
-    """
-    def __init__(self, model_vector_size: int, cycle_vector_size: int, score_head_dim: int = 128, bias: bool = True):
-        super().__init__()
+    def __init__(self, model_vector_size: int, cycle_vector_size: int, score_head_dim: int, bias: bool):
+        """
+        Takes Mamba and cyclic features as input and builds a score matrix S for gumbel-sinkhorn soft permutation.
+        Build S in [B x N x N] from:
+        E = mamba_features in [B x N x 4E]
+        R = cyclic_feats    in [B x N x E]
+        W = bilinear_weights in [d_head x d_head]
+        via S = (E U_e) W (R U_r)^T
+        """
+        super(BilinearScoreHead, self).__init__()
         self.proj_e = nn.Linear(model_vector_size, score_head_dim, bias=False)  # U_e
         self.proj_r = nn.Linear(cycle_vector_size, score_head_dim, bias=False) # U_r
         self.W      = nn.Parameter(torch.empty(score_head_dim, score_head_dim))    # bilinear core
@@ -185,12 +193,18 @@ class BilinearScoreHead(nn.Module):
 
 
 class AttentionScoreHead(nn.Module):
-    """
-    Takes Mamba features as input, processes them through one Transformer-style Encoder layer,
-    and then projects them to a final score matrix S in [B x N x N].
-    """
     def __init__(self, model_dim: int, num_heads: int, ffn_expansion: int, dropout: float):
-        super().__init__()
+        """
+        Transformer-style Multihead Attention Score Head for TSP.
+        Takes Mamba features as input, processes them through one Transformer-style Encoder layer, including Feed-Forward Network with Pre-LN,
+        and then projects them to a final score matrix S in [B x N x N].
+        Args:
+            model_dim: Dimension of the input features (d_model)
+            num_heads: Number of attention heads
+            ffn_expansion: Expansion factor for the Feed-Forward Network
+            dropout: Dropout rate for regularization
+        """
+        super(AttentionScoreHead, self).__init__()
         self.attention = nn.MultiheadAttention(
             embed_dim=model_dim,
             num_heads=num_heads,
@@ -240,18 +254,21 @@ class AttentionScoreHead(nn.Module):
 
 
 class GumbelSinkhornDecoder(nn.Module):
-    """
-    Takes score matrix [B, N, N] as input,
-    introduces Gumbel noise via sampling and scales scores according to temperature gs_tau,
-    performs Sinkhorn normalization for gs_iters iterations (larger -> closer to true permutation) to get a doubly stochastic matrix.
-    """
-    def __init__(self, gs_tau, gs_iters):
+    def __init__(self, gs_tau: float, gs_iters: int):
+        """
+        Takes score matrix [B, N, N] as input,
+        introduces Gumbel noise via sampling and scales scores according to temperature gs_tau,
+        performs Sinkhorn normalization for gs_iters iterations (larger -> closer to true permutation) to get a doubly stochastic matrix.
+        Args:
+            gs_tau: Gumbel-Sinkhorn temperature (lower -> closer to true permutation)
+            gs_iters: Number of Sinkhorn iterations (larger -> closer to true permutation)
+        """
         super().__init__()
         self.gs_tau = gs_tau
         self.gs_iters = gs_iters
 
     # ---- Gumbel noise sampling ----
-    def sample_gumbel(self, shape, eps, device: torch.device):
+    def sample_gumbel(self, shape: torch.Size, eps: float, device: torch.device) -> torch.Tensor:
         U = torch.rand(shape, device=device)
         return -torch.log(-torch.log(U + eps) + eps)
 
@@ -276,14 +293,16 @@ class GumbelSinkhornDecoder(nn.Module):
         # Sinkhorn normalization to get doubly stochastic matrix
         soft_perm = self.sinkhorn(scores)
         return soft_perm
-    
+
 
 class TourConstructor(nn.Module):
-    """
-    Creates a hard tour from the given soft permutation matrix.
-    Applies straight-through estimation for gradient flow.
-    """
     def __init__(self, method: str):
+        """
+        Creates a hard tour from the given soft permutation matrix.
+        Applies straight-through estimation for gradient flow.
+        Args:
+            method: (str) - method for hard permutation extraction ("greedy" or "hungarian")
+        """
         super(TourConstructor, self).__init__()
         self.method = method
 
@@ -342,7 +361,7 @@ class TourConstructor(nn.Module):
             hard_perm[b, ri, cj] = 1.0
         return hard_perm
 
-    def forward(self, soft_perm: torch.Tensor):
+    def forward(self, soft_perm: torch.Tensor) -> torch.Tensor:
         """
         Forward pass for the tour constructor. Converts a soft permutation matrix to hard permutation matrix using straight-through estimator.
         Forward pass uses hard permutation, backward pass uses soft permutation for gradient flow.
@@ -362,3 +381,85 @@ class TourConstructor(nn.Module):
         # ST trick for gradient flow
         straight_through_perm = hard_perm + (soft_perm - soft_perm.detach())
         return straight_through_perm
+
+
+class ConvolutionBlock(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int):
+        """
+        A standard residual block for 2D convolutions, inspired by ResNet.
+        Processes an image-like tensor (e.g., a permutation matrix).
+        The block structure is: Conv -> BN -> ReLU -> Conv -> BN -> Add -> ReLU
+        Args:
+            in_channels: Number of input channels
+            out_channels: Number of output channels
+            kernel_size: Size of the convolutional kernel (assumed square)
+            stride: Stride for the first convolutional layer
+        """
+        super(ConvolutionBlock, self).__init__()
+        padding = kernel_size // 2
+        self.relu = nn.ReLU()
+
+        # Main Path
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size, 1, padding, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+        # Residual Path
+        self.shortcut = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+            nn.BatchNorm2d(out_channels)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (B, in_C, N, N) - A 4D tensor representing a batch of images or feature maps.
+        Returns:
+            x: (B, out_C, N, N) - The processed tensor.
+        """
+        # Skip connection
+        identity = self.shortcut(x)
+        # Conv2D Layer 1
+        out = self.conv1(x)
+        out = self.bn1(out)
+        # ReLU Activation 1
+        out = self.relu(out)
+        # Conv2D Layer 2
+        out = self.conv2(out)
+        out = self.bn2(out)
+        # Residual connection and ReLU Activation 2
+        out = out + identity
+        out = self.relu(out)
+        return out
+
+
+class MLP(nn.Module):
+    def __init__(self, input_dim: int, feed_forward_dim: int, embedding_dim: int, dropout: float, output_dim: int):
+        """
+        A simple feedforward neural network with 3 linear layers, ReLU activations, and dropout.
+        Designed for regression tasks, outputting a single scalar value.
+        Args:
+            input_dim: Dimension of the input features
+            feed_forward_dim: Dimension of the hidden layers
+            embedding_dim: Dimension of the second hidden layer
+            output_dim: Dimension of the output (1 for regression)
+        """
+        super(MLP, self).__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, feed_forward_dim),
+            nn.ReLU(),
+            nn.Dropout(p=dropout),
+            nn.Linear(feed_forward_dim, embedding_dim),
+            nn.ReLU(),
+            nn.Linear(embedding_dim, output_dim)
+        )
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (B, input_dim) - A 2D tensor representing a batch of input features.
+        Returns:
+            out: (B, 1) - A tensor representing the output scalar for each input in the batch.
+        """
+        return self.network(x)

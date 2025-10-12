@@ -12,31 +12,52 @@ def get_options(args=None):
     parser.add_argument('--problem', default='tsp', choices = ['vrp', 'tsp'], help="the targeted problem to solve, default 'tsp'")
     parser.add_argument('--graph_size', type=int, default=100, help="the number of customers in the targeted problem (graph size)")
     parser.add_argument('--problem_size', type=int, default=10000, help='number of problem instances for training')
-
     parser.add_argument('--seed', type=int, default=1234, help='random seed to use')
     
-    # Route-Mamba parameters
+    # Model parameters
+    ## Common
     parser.add_argument('--tour_heuristic', type=str, default='greedy', help='Heuristic for initial tour construction (greedy, random, farthest)')
+    parser.add_argument('--dropout', type=float, default=0.0, help='dropout rate for regularization (0 = no dropout)')
+    ## Embedding Network
     parser.add_argument('--input_dim', type=int, default=2, help='input dimension of the problem nodes')
     parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of embeddings for each, NFE & CE, has to be even')
-    parser.add_argument('--num_harmonics', type=int, default=16, help='number of harmonics for cyclic positional encoding')
+    parser.add_argument('--num_harmonics', type=int, default=32, help='number of harmonics for cyclic positional encoding (recommended: <= N/2)')
     parser.add_argument('--frequency_scaling', type=float, default=0.0, help='How the amplitude should decay for harmonics with larger frequencies (between 0 and 1)')
+    ## Mamba Encoder
     parser.add_argument('--mamba_hidden_dim', type=int, default=128, help='dimension of hidden state representation in Mamba')
     parser.add_argument('--mamba_layers', type=int, default=3, help='number of stacked Mamba blocks in the model')
+    ## Bilinear Score Head (alternative to attention score head)
     parser.add_argument('--score_head_dim', type=int, default=128, help='dimension of the bilinear score head to construct score matrix')
     parser.add_argument('--score_head_bias', type=bool, default=True, help='whether to use bias in score head')
+    ## Attention Score Head
     parser.add_argument('--num_attention_heads', type=int, default=8, help='number of attention heads in the model')
-    parser.add_argument('--gs_tau_initial', type=float, default=5.0, help='Gumbel-Sinkhorn initial temperature')
-    parser.add_argument('--gs_tau_final', type=float, default=0.5, help='Gumbel-Sinkhorn final temperature')
-    parser.add_argument('--gs_iters', type=int, default=20, help='Number of Sinkhorn iterations')
+    parser.add_argument('--ffn_expansion', type=int, default=4, help='expansion factor for the FFN in the attention score head')
+    parser.add_argument('--initial_identity_bias', type=float, default=10.0, help='initial bias to add to diagonal of score matrix to discourage self-loops')
+    ## Gumbel-Sinkhorn Decoder
+    parser.add_argument('--sinkhorn_tau', type=float, default=0.5, help='Sinkhorn temperature, higher = softer, lower = harder')
+    parser.add_argument('--sinkhorn_tau_decay', type=float, default=0.9, help='Sinkhorn temperature decay rate per epoch')
+    parser.add_argument('--sinkhorn_iters', type=int, default=10, help='Number of Sinkhorn iterations')
+    ## Tour Constructor
     parser.add_argument('--tour_method', type=str, default='greedy', choices=['greedy', 'hungarian'], help='Method for tour construction')
+    ## Convolutional Encoder (critic)
+    parser.add_argument('--conv_out_channels', type=int, default=64, help='number of output channels for convolutional action encoder')
+    parser.add_argument('--conv_kernel_size', type=int, default=3, help='kernel size for convolutional action encoder')
+    parser.add_argument('--conv_stride', type=int, default=2, help='stride for convolutional action encoder')
+    ## MLP Value Decoder (critic)
+    parser.add_argument('--mlp_ff_dim', type=int, default=256, help='feed forward dimension for MLP value decoder')
+    parser.add_argument('--mlp_embedding_dim', type=int, default=128, help='embedding dimension for MLP value decoder')
 
     # Training parameters
-    parser.add_argument('--RL_agent', default='surrogate', choices = ['surrogate'], help='RL Training algorithm')
-    parser.add_argument('--n_epochs', type=int, default=50, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=500,help='number of instances per batch during training')
-    parser.add_argument('--initial_lr', type=float, default=1e-3, help="initial learning rate for the actor network")
-    parser.add_argument('--lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
+    parser.add_argument('--n_epochs', type=int, default=10, help='Number of training epochs')
+    parser.add_argument('--batch_size', type=int, default=256,help='number of instances per batch during training')
+    parser.add_argument('--buffer_size', type=int, default=100000, help='size of the replay buffer')
+    parser.add_argument('--actor_lr', type=float, default=1e-3, help="initial learning rate for the actor network")
+    parser.add_argument('--actor_lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
+    parser.add_argument('--critic_lr', type=float, default=1e-3, help="initial learning rate for the critic network")
+    parser.add_argument('--critic_lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
+    parser.add_argument('--reward_scale', type=float, default=1.0, help='scaling factor for reward signal')
+    parser.add_argument('--loss_weight', type=float, default=0.5, help='weighting factor between hard and soft critic loss (0 = only hard, 1 = only soft)')
+    parser.add_argument('--epsilon', type=float, default=0.1, help='epsilon value for epsilon-greedy exploration')
 
     # Inference and validation parameters
     parser.add_argument('--eval_only', action='store_true', help='switch to inference mode')
@@ -44,7 +65,8 @@ def get_options(args=None):
     parser.add_argument('--val_dataset', type=str, default = './datasets/tsp_20_10000.pkl', help='dataset file path')
 
     # resume and load models
-    parser.add_argument('--load_path', default = None, help='path to load model parameters and optimizer state from')
+    parser.add_argument('--actor_load_path', default = None, help='path to load actor parameters from')
+    parser.add_argument('--critic_load_path', default = None, help='path to load critic parameters from')
     parser.add_argument('--resume', default = None, help='resume from previous checkpoint file')
     parser.add_argument('--epoch_start', type=int, default=0, help='start at epoch # (relevant for learning rate decay)')
 
@@ -59,9 +81,6 @@ def get_options(args=None):
     
     opts = parser.parse_args(args)
 
-    # Some additional settings
-    opts.gs_anneal_rate = (opts.gs_tau_final / opts.gs_tau_initial) ** (1 / float(opts.n_epochs))  # exponential decay
-    
     # processing settings
     opts.use_cuda = torch.cuda.is_available()
     opts.P = 250 if opts.eval_only else 1e10 # can set to smaller values e.g., 20 or 10, for generalization 
