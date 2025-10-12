@@ -24,14 +24,6 @@ class Critic(nn.Module):
             mamba_layers = mamba_layers
         )
 
-        # Fused Tour Encoder
-        # self.tour_encoder = BidirectionalMambaEncoder(
-        #     mamba_model_size = 4 * embedding_dim,
-        #     mamba_hidden_state_size = mamba_hidden_dim,
-        #     dropout = dropout,
-        #     mamba_layers = 1
-        # )
-
         # Value Decoder
         self.value_decoder = MLP(
             input_dim = 4 * embedding_dim,
@@ -57,7 +49,6 @@ class Critic(nn.Module):
 
         # Fuse State and Action 
         expected_tours = torch.bmm(action.transpose(1, 2), state_embedding)  # (B, N, 2M)
-        # fused_embedding = self.tour_encoder(expected_tours)
 
         # Decode Q-Value
         q = self.value_decoder(expected_tours.mean(dim=1))  # (B, 1)
