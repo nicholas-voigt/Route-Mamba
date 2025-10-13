@@ -10,6 +10,7 @@ def get_options(args=None):
 
     # Problem settings
     parser.add_argument('--problem', default='tsp', choices = ['vrp', 'tsp'], help="the targeted problem to solve, default 'tsp'")
+    parser.add_argument('--trainer', default='ar', choices = ['spg', 'ar'], help="the training algorithm, default 'ar'")
     parser.add_argument('--graph_size', type=int, default=100, help="the number of customers in the targeted problem (graph size)")
     parser.add_argument('--problem_size', type=int, default=10000, help='number of problem instances for training')
     parser.add_argument('--seed', type=int, default=1234, help='random seed to use')
