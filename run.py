@@ -6,6 +6,7 @@ from torch import optim
 
 from problems.tsp import TSP
 from trainer.spg import SPGTrainer
+from trainer.autoregressive import ARTrainer
 from options import get_options
 
 def load_problem(name):
@@ -15,6 +16,14 @@ def load_problem(name):
     assert problem is not None, "Currently unsupported problem: {}!".format(name)
     return problem
 
+
+def load_trainer(name):
+    trainer = {
+        'spg': SPGTrainer,
+        'ar': ARTrainer
+    }.get(name, None)
+    assert trainer is not None, "Currently unsupported trainer: {}!".format(name)
+    return trainer
 
 def run(opts):
 
@@ -33,7 +42,7 @@ def run(opts):
     problem = load_problem(opts.problem)(size=opts.graph_size)
 
     # Initialize the Agent, which includes actor, critic, optimizers, schedulers and memory buffer
-    agent = SPGTrainer(opts)
+    agent = load_trainer(opts.trainer)(opts)
 
     # Start the actual training/inference loop
     if opts.eval_only:

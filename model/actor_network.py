@@ -118,6 +118,6 @@ class ARPointerActor(nn.Module):
         encoded_graph = encoded_features.mean(dim=1)  # (B, 2M)
 
         # 3. Decoding Workshop: Autoregressive Pointer Network
-        hard_perm, soft_perm = self.decoder(encoded_graph, encoded_features)  # (B, N)
+        hard_perm, prob_dist = self.decoder(encoded_graph, encoded_features)  # (B, N, N), (B, N, N)
 
-        return hard_perm, soft_perm
+        return hard_perm, prob_dist
