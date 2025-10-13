@@ -74,28 +74,23 @@ class SinkhornPermutationActor(nn.Module):
 
 
 class ARPointerActor(nn.Module):
-    def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers, dropout):
+    def __init__(self, input_dim, embedding_dim, mamba_hidden_dim, mamba_layers, dropout):
         super().__init__()
 
         # Model components
-        self.feature_embedder = mc.EmbeddingNet(
-            input_dim = input_dim,
-            embedding_dim = embedding_dim,
-            num_harmonics = num_harmonics,
-            alpha = frequency_scaling
-        )
-        self.embedding_norm = nn.LayerNorm(2 * embedding_dim)
+        self.feature_embedder = nn.Linear(input_dim, embedding_dim, bias=False)
+        self.embedding_norm = nn.LayerNorm(embedding_dim)
         self.encoder = mc.BidirectionalMambaEncoder(
-            mamba_model_size = 2 * embedding_dim,
+            mamba_model_size = embedding_dim,
             mamba_hidden_state_size = mamba_hidden_dim,
             dropout = dropout,
             mamba_layers = mamba_layers
         )
-        self.encoder_norm = nn.LayerNorm(4 * embedding_dim)
+        self.encoder_norm = nn.LayerNorm(2 * embedding_dim) # Because of bidirectional, output dim = 2 * input dim
         self.decoder = mc.ARPointerDecoder(
-            embedding_dim = 4 * embedding_dim,
+            embedding_dim = 2 * embedding_dim,
             mamba_hidden_dim = 256,
-            key_proj_bias = True,
+            key_proj_bias = False,
             dropout = dropout
         )
 
@@ -105,12 +100,11 @@ class ARPointerActor(nn.Module):
         Args:
             batch: (B, N, I) - node features with 2D coordinates
         Returns:
-            tour: (B, N) - node indices representing the tour
-            logits: (B, ) - sum of log probabilities of the chosen actions
+            tour: (B, N, N) - permutation matrix representing the tour
+            prob_dist: (B, N, N) - probability distribution over next nodes at each step
         """
-        # 1. Create Embeddings, normalize and concatenate
-        node_embeddings, cyclic_embeddings = self.feature_embedder(batch)  # (B, N, E), (B, N, E)
-        embeddings = self.embedding_norm(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))
+        # 1. Create Embeddings & normalize
+        embeddings = self.embedding_norm(self.feature_embedder(batch))  # (B, N, E)
 
         # 2. Encoding Workshop: Layered Mamba blocks with internal Pre-LN and external Post-LN
         encoded_features = self.encoder(embeddings)   # (B, N, 2M)
