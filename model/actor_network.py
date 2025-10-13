@@ -94,7 +94,7 @@ class ARPointerActor(nn.Module):
         self.encoder_norm = nn.LayerNorm(4 * embedding_dim)
         self.decoder = mc.ARPointerDecoder(
             embedding_dim = 4 * embedding_dim,
-            mamba_hidden_dim = 1024,
+            mamba_hidden_dim = 256,
             key_proj_bias = True,
             dropout = dropout
         )
