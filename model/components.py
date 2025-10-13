@@ -439,10 +439,10 @@ class ARPointerDecoder(nn.Module):
         for t in range(1, N):
             # Form query using MambaBlock
             query_context = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1).unsqueeze(1)  # (B, 1, context_dim)
-            query = self.query_projection(query_context) # (B, 1, context_dim)
+            query = self.query_projection(query_context).squeeze(1)  # (B, context_dim)
 
             # Calculate attention scores (logits) by pointing & mask out already visited nodes
-            logits = torch.bmm(keys, query).squeeze(-1)  # (B, N)
+            logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
             logits[mask] = NEG
 
             # Get probability distribution over next nodes & sample
