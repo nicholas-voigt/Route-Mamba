@@ -124,8 +124,8 @@ class ARTrainer:
         log_prob_sums = (torch.log(prob_dist + 1e-9) * actions).sum(dim=(1, 2))  # (B,)
 
         # Critic forward pass for baseline calculation
-        hard_Q = self.critic(observation, actions)
-        soft_Q = self.critic(observation, prob_dist)
+        hard_Q = self.critic(observation, actions.detach())
+        soft_Q = self.critic(observation, prob_dist.detach())
 
         # Calculate tour lengths, actor loss & critic loss
         actual_tour_lengths = compute_euclidean_tour(torch.bmm(actions.transpose(1, 2), observation))
