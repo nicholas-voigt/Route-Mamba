@@ -390,19 +390,19 @@ class ARPointerDecoder(nn.Module):
         Takes node embeddings and graph embeddings as input and produces a tour iteratively (autoregressive).
         Uses Mamba for context encoding and query formulation and Transformer-style attention for pointing.
         Args:
-            embedding_dim: Dimension of the input embeddings (2 * node_embedding_dim)
+            embedding_dim: Dimension of the input embeddings for one node
             mamba_hidden_dim: Hidden state size for Mamba
             key_proj_bias: Bias for key projection layer
             dropout: Dropout rate for regularization
         """
         super(ARPointerDecoder, self).__init__()
-        context_dim = 6 * embedding_dim  # graph embedding + 2 node embeddings
+        context_dim = 3 * embedding_dim  # graph embedding + 2 node embeddings
         self.query_projection = MambaBlock(
             mamba_model_size = context_dim,
             mamba_hidden_state_size = mamba_hidden_dim,
             dropout = dropout
         )
-        self.key_projection = nn.Linear(2 * embedding_dim, context_dim, bias=key_proj_bias)  # project node embeddings for key/value
+        self.key_projection = nn.Linear(embedding_dim, context_dim, bias=key_proj_bias)  # project node embeddings for key/value
 
     def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
