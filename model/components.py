@@ -453,8 +453,9 @@ class ARPointerDecoder(nn.Module):
             batch_indices = torch.arange(B, device=device)
             tour_matrix[batch_indices, next_node_idx, t] = 1.0
             prob_matrix[:, :, t] = probs_t
-            mask[batch_indices, next_node_idx] = True
             prev_node_emb = node_emb[batch_indices, next_node_idx, :]
+            mask = mask.clone()
+            mask[batch_indices, next_node_idx] = True
 
         return tour_matrix, prob_matrix
 
