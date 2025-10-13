@@ -23,8 +23,6 @@ class ARTrainer:
             self.actor = ARPointerActor(
                 input_dim = opts.input_dim,
                 embedding_dim = opts.embedding_dim,
-                num_harmonics = opts.num_harmonics,
-                frequency_scaling = opts.frequency_scaling,
                 mamba_hidden_dim = opts.mamba_hidden_dim,
                 mamba_layers = opts.mamba_layers,
                 dropout = opts.dropout
@@ -56,6 +54,7 @@ class ARTrainer:
             logger = {
                 'initial_tour_length': [],
                 'actual_tour_length': [],
+                'action_log_prob': [],
                 'actor_loss': []
             }
 
@@ -76,6 +75,7 @@ class ARTrainer:
             print(f"-  Epoch Runtime: {epoch_duration:.2f}s")
             print(f"-  Average Initial Tour Length: {sum(logger['initial_tour_length'])/len(logger['initial_tour_length']):.4f}")
             print(f"-  Average Actual Tour Length: {sum(logger['actual_tour_length'])/len(logger['actual_tour_length']):.4f}")
+            print(f"-  Average Action Log Probability: {sum(logger['action_log_prob'])/len(logger['action_log_prob']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
 
             # update learning rate
@@ -90,12 +90,16 @@ class ARTrainer:
 
         # get observations (initial tours) through heuristic from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
-        observation = get_initial_tours(batch['coordinates'], self.opts.tour_heuristic)
-        initial_tour_lengths = compute_euclidean_tour(observation)
+        observation = batch['coordinates']
 
         # Actor forward pass - TODO: Evaluate if epsilon-greedy 2-opt exploration is beneficial
         actions, prob_dist = self.actor(observation)
         log_prob_sums = (torch.log(prob_dist + 1e-9) * actions.detach()).sum(dim=(1, 2))  # (B,)
+
+        # Baseline
+        with torch.no_grad():
+            initial_tours = get_initial_tours(observation, self.opts.tour_heuristic)
+            initial_tour_lengths = compute_euclidean_tour(initial_tours)  # (B,)
 
         # Calculate tour lengths & actor loss
         actual_tour_lengths = compute_euclidean_tour(torch.bmm(actions.transpose(1, 2), observation))
@@ -104,6 +108,7 @@ class ARTrainer:
         # Logging
         logger['initial_tour_length'].append(initial_tour_lengths.mean().item())
         logger['actual_tour_length'].append(actual_tour_lengths.mean().item())
+        logger['action_log_prob'].append(log_prob_sums.mean().item())
         logger['actor_loss'].append(actor_loss.item())
 
         # Update actor network
