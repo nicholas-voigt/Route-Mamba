@@ -32,36 +32,15 @@ class ARTrainer:
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=opts.actor_lr)
         self.actor_scheduler = optim.lr_scheduler.LambdaLR(self.actor_optimizer, lambda epoch: opts.actor_lr_decay ** epoch)
 
-        # Initialize the critic with optimizer, learning rate scheduler and loss function
-        if opts.critic_load_path:
-            print(f"Loading critic model from {opts.critic_load_path}")
-            self.critic = torch.load(opts.critic_load_path, map_location=opts.device)
-        else:
-            self.critic = Critic(
-                input_dim = opts.input_dim,
-                embedding_dim = opts.embedding_dim,
-                num_harmonics = opts.num_harmonics,
-                frequency_scaling = opts.frequency_scaling,
-                mamba_hidden_dim = opts.mamba_hidden_dim,
-                mamba_layers = opts.mamba_layers,
-                dropout = opts.dropout,
-                mlp_ff_dim = opts.mlp_ff_dim,
-                mlp_embedding_dim = opts.mlp_embedding_dim
-            ).to(opts.device)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=opts.critic_lr)
-        self.critic_scheduler = optim.lr_scheduler.LambdaLR(self.critic_optimizer, lambda epoch: opts.critic_lr_decay ** epoch)
-
 
     def train(self):
         torch.set_grad_enabled(True)
         self.actor.train()
-        if not self.opts.eval_only: self.critic.train()
 
 
     def eval(self):
         torch.set_grad_enabled(False)
         self.actor.eval()
-        if not self.opts.eval_only: self.critic.eval()
 
 
     def start_training(self, problem):
@@ -73,13 +52,11 @@ class ARTrainer:
         for epoch in range(self.opts.n_epochs):
             print(f"\nTraining Epoch {epoch}:")
             print(f"-  Actor Learning Rate: {self.actor_optimizer.param_groups[0]['lr']:.6f}")
-            print(f"-  Critic Learning Rate: {self.critic_optimizer.param_groups[0]['lr']:.6f}")
 
             logger = {
                 'initial_tour_length': [],
                 'actual_tour_length': [],
-                'actor_loss': [],
-                'critic_loss': []
+                'actor_loss': []
             }
 
             start_time = time.time()
@@ -100,16 +77,13 @@ class ARTrainer:
             print(f"-  Average Initial Tour Length: {sum(logger['initial_tour_length'])/len(logger['initial_tour_length']):.4f}")
             print(f"-  Average Actual Tour Length: {sum(logger['actual_tour_length'])/len(logger['actual_tour_length']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
-            print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
 
-            # update learning rates
+            # update learning rate
             self.actor_scheduler.step()
-            self.critic_scheduler.step()
 
             if (self.opts.checkpoint_epochs != 0 and epoch % self.opts.checkpoint_epochs == 0) or epoch == self.opts.n_epochs - 1:
                 torch.save(self.actor, f"{self.opts.save_dir}/actor_{self.opts.problem}_epoch{epoch + 1}.pt")
-                torch.save(self.critic, f"{self.opts.save_dir}/critic_{self.opts.problem}_epoch{epoch + 1}.pt")
-                print(f"Saved actor and critic models at epoch {epoch + 1} to {self.opts.save_dir}")
+                print(f"Saved model at epoch {epoch + 1} to {self.opts.save_dir}")
 
 
     def train_batch(self, batch: dict, logger: dict):
@@ -121,39 +95,24 @@ class ARTrainer:
 
         # Actor forward pass - TODO: Evaluate if epsilon-greedy 2-opt exploration is beneficial
         actions, prob_dist = self.actor(observation)
-        log_prob_sums = (torch.log(prob_dist + 1e-9) * actions).sum(dim=(1, 2))  # (B,)
+        log_prob_sums = (torch.log(prob_dist + 1e-9) * actions.detach()).sum(dim=(1, 2))  # (B,)
 
-        # Critic forward pass for baseline calculation
-        hard_Q = self.critic(observation, actions.detach())
-        soft_Q = self.critic(observation, prob_dist.detach())
-
-        # Calculate tour lengths, actor loss & critic loss
+        # Calculate tour lengths & actor loss
         actual_tour_lengths = compute_euclidean_tour(torch.bmm(actions.transpose(1, 2), observation))
-        actor_loss = ((actual_tour_lengths - initial_tour_lengths) * log_prob_sums.detach()).mean()
-        critic_loss = F.mse_loss(hard_Q, actual_tour_lengths.detach()) + F.mse_loss(soft_Q, hard_Q.detach())
+        actor_loss = ((actual_tour_lengths - initial_tour_lengths) * log_prob_sums).mean()
 
         # Logging
         logger['initial_tour_length'].append(initial_tour_lengths.mean().item())
         logger['actual_tour_length'].append(actual_tour_lengths.mean().item())
         logger['actor_loss'].append(actor_loss.item())
-        logger['critic_loss'].append(critic_loss.item())
 
-        # Update actor and critic networks
+        # Update actor network
         self.actor_optimizer.zero_grad()
-        self.critic_optimizer.zero_grad()
-
         actor_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1.0)
         if self.gradient_check:
             log_gradients(self.actor)
         self.actor_optimizer.step()
-
-        critic_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
-        if self.gradient_check:
-            log_gradients(self.critic)
-        self.critic_optimizer.step()
-
         self.gradient_check = False
 
 
