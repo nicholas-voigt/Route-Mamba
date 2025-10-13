@@ -443,7 +443,7 @@ class ARPointerDecoder(nn.Module):
 
             # Calculate attention scores (logits) by pointing & mask out already visited nodes
             logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
-            logits[mask] = NEG
+            logits = torch.where(mask, NEG, logits)
 
             # Get probability distribution over next nodes & sample
             probs_t = F.softmax(logits, dim=-1)
