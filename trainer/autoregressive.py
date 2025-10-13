@@ -129,8 +129,8 @@ class ARTrainer:
 
         # Calculate tour lengths, actor loss & critic loss
         actual_tour_lengths = compute_euclidean_tour(torch.bmm(actions.transpose(1, 2), observation))
-        actor_loss = ((actual_tour_lengths - hard_Q.detach()) * log_prob_sums).mean()
-        critic_loss = F.mse_loss(hard_Q, actual_tour_lengths) + F.mse_loss(soft_Q, hard_Q.detach())
+        actor_loss = ((actual_tour_lengths - initial_tour_lengths) * log_prob_sums.detach()).mean()
+        critic_loss = F.mse_loss(hard_Q, actual_tour_lengths.detach()) + F.mse_loss(soft_Q, hard_Q.detach())
 
         # Logging
         logger['initial_tour_length'].append(initial_tour_lengths.mean().item())
