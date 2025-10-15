@@ -21,7 +21,8 @@ def get_options(args=None):
     parser.add_argument('--dropout', type=float, default=0.0, help='dropout rate for regularization (0 = no dropout)')
     ## Embedding Network
     parser.add_argument('--input_dim', type=int, default=2, help='input dimension of the problem nodes')
-    parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of embeddings for each, NFE & CE, has to be even')
+    parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of embeddings, has to be even')
+    parser.add_argument('--kNN_neighbors', type=int, default=8, help='number of nearest neighbors for structural embedding (k <= N & k <= embedding_dim)')
     parser.add_argument('--num_harmonics', type=int, default=32, help='number of harmonics for cyclic positional encoding (recommended: <= N/2)')
     parser.add_argument('--frequency_scaling', type=float, default=0.0, help='How the amplitude should decay for harmonics with larger frequencies (between 0 and 1)')
     ## Mamba Encoder

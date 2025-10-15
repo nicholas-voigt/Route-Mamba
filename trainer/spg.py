@@ -24,8 +24,7 @@ class SPGTrainer:
             self.actor = SinkhornPermutationActor(
                 input_dim = opts.input_dim,
                 embedding_dim = opts.embedding_dim,
-                num_harmonics = opts.num_harmonics,
-                frequency_scaling = opts.frequency_scaling,
+                kNN_neighbors = opts.kNN_neighbors,
                 mamba_hidden_dim = opts.mamba_hidden_dim,
                 mamba_layers = opts.mamba_layers,
                 num_attention_heads = opts.num_attention_heads,
@@ -47,8 +46,7 @@ class SPGTrainer:
             self.critic = Critic(
                 input_dim = opts.input_dim,
                 embedding_dim = opts.embedding_dim,
-                num_harmonics = opts.num_harmonics,
-                frequency_scaling = opts.frequency_scaling,
+                kNN_neighbors = opts.kNN_neighbors,
                 mamba_hidden_dim = opts.mamba_hidden_dim,
                 mamba_layers = opts.mamba_layers,
                 dropout = opts.dropout,

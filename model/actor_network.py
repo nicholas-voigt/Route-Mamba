@@ -5,12 +5,16 @@ from model import components as mc
 
 
 class SinkhornPermutationActor(nn.Module):
-    def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers, 
+    def __init__(self, input_dim, embedding_dim, kNN_neighbors, mamba_hidden_dim, mamba_layers, 
                  num_attention_heads, ffn_expansion, initial_identity_bias, gs_tau, gs_iters, method, dropout):
         super().__init__()
 
         # Model components
-        self.feature_embedder = nn.Linear(input_dim, embedding_dim, bias=False)
+        self.feature_embedder = mc.StructuralEmbeddingNet(
+            input_dim = input_dim,
+            embedding_dim = embedding_dim,
+            k = kNN_neighbors
+        )
         self.embedding_norm = nn.LayerNorm(embedding_dim)
         self.encoder = mc.BidirectionalMambaEncoder(
             mamba_model_size = embedding_dim,

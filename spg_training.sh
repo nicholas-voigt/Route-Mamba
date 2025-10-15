@@ -78,6 +78,7 @@ LOSS_WEIGHT=0.2
 
 DROPOUT=0.1
 EMBEDDING_DIM=32
+KNN_NEIGHBORS=8
 NUM_HARMONICS=16
 MAMBA_HIDDEN_DIM=128
 MAMBA_LAYERS=3
@@ -93,4 +94,4 @@ TOUR_METHOD="greedy"
 MLP_FF_DIM=32
 MLP_EMBEDDING_DIM=16
 
-srun --gres=gpu:1 python run.py --problem $PROBLEM --trainer $TRAINER --graph_size $GRAPH_SIZE --problem_size $PROBLEM_SIZE --n_epochs $N_EPOCHS --batch_size $BATCH_SIZE --buffer_size $BUFFER_SIZE --tour_heuristic $TOUR_HEURISTIC --actor_lr $ACTOR_LR --actor_lr_decay $ACTOR_LR_DECAY --critic_lr $CRITIC_LR --critic_lr_decay $CRITIC_LR_DECAY --reward_scale $REWARD_SCALE --loss_weight $LOSS_WEIGHT --dropout $DROPOUT --embedding_dim $EMBEDDING_DIM --num_harmonics $NUM_HARMONICS --mamba_hidden_dim $MAMBA_HIDDEN_DIM --mamba_layers $MAMBA_LAYERS --score_head_dim $SCORE_HEAD_DIM --score_head_bias $SCORE_HEAD_BIAS --num_attention_heads $NUM_ATTENTION_HEADS --ffn_expansion $FFN_EXPANSION --initial_identity_bias $INITIAL_IDENTITY_BIAS --sinkhorn_tau $SINKHORN_TAU --sinkhorn_tau_decay $SINKHORN_TAU_DECAY --sinkhorn_iters $SINKHORN_ITERS --tour_method $TOUR_METHOD --mlp_ff_dim $MLP_FF_DIM --mlp_embedding_dim $MLP_EMBEDDING_DIM --no_progress_bar
+srun --gres=gpu:1 python run.py --problem $PROBLEM --trainer $TRAINER --graph_size $GRAPH_SIZE --problem_size $PROBLEM_SIZE --n_epochs $N_EPOCHS --batch_size $BATCH_SIZE --buffer_size $BUFFER_SIZE --tour_heuristic $TOUR_HEURISTIC --actor_lr $ACTOR_LR --actor_lr_decay $ACTOR_LR_DECAY --critic_lr $CRITIC_LR --critic_lr_decay $CRITIC_LR_DECAY --reward_scale $REWARD_SCALE --loss_weight $LOSS_WEIGHT --dropout $DROPOUT --embedding_dim $EMBEDDING_DIM --kNN_neighbors $KNN_NEIGHBORS --mamba_hidden_dim $MAMBA_HIDDEN_DIM --mamba_layers $MAMBA_LAYERS --score_head_dim $SCORE_HEAD_DIM --score_head_bias $SCORE_HEAD_BIAS --num_attention_heads $NUM_ATTENTION_HEADS --ffn_expansion $FFN_EXPANSION --initial_identity_bias $INITIAL_IDENTITY_BIAS --sinkhorn_tau $SINKHORN_TAU --sinkhorn_tau_decay $SINKHORN_TAU_DECAY --sinkhorn_iters $SINKHORN_ITERS --tour_method $TOUR_METHOD --mlp_ff_dim $MLP_FF_DIM --mlp_embedding_dim $MLP_EMBEDDING_DIM --no_progress_bar

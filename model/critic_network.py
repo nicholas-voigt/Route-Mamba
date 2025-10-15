@@ -1,16 +1,20 @@
 import torch
 import torch.nn as nn
 
-from model.components import EmbeddingNet, BidirectionalMambaEncoder, MLP
+from model.components import StructuralEmbeddingNet, BidirectionalMambaEncoder, MLP
 
 
 class Critic(nn.Module):
-    def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers,
+    def __init__(self, input_dim, embedding_dim, kNN_neighbors, mamba_hidden_dim, mamba_layers,
                  dropout, mlp_ff_dim, mlp_embedding_dim):
         super(Critic, self).__init__()
 
         # State Encoder
-        self.state_embedder = nn.Linear(input_dim, embedding_dim, bias=False)
+        self.state_embedder = StructuralEmbeddingNet(
+            input_dim = input_dim,
+            embedding_dim = embedding_dim,
+            k = kNN_neighbors
+        )
         self.state_embedding_norm = nn.LayerNorm(embedding_dim)
         self.state_encoder = BidirectionalMambaEncoder(
             mamba_model_size = embedding_dim,
