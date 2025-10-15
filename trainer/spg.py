@@ -173,7 +173,6 @@ class SPGTrainer:
                 dense_actions[batch_idxs, :, j] = dense_cols_i
 
         ## Reward calculation using soft actions (tour distributions)
-        # reward = -1 * compute_euclidean_tour(torch.bmm(dense_actions.transpose(1, 2), observation)) * self.opts.reward_scale  # Apply reward scaling
         actual_tour_lengths = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
         reward = (initial_tour_lengths - actual_tour_lengths) * self.opts.reward_scale  # Apply reward scaling
 
@@ -201,10 +200,7 @@ class SPGTrainer:
 
         hard_Q = self.critic(sampled_obs, sampled_disc_actions)
         soft_Q = self.critic(sampled_obs, sampled_dense_actions)
-
-        # critic_loss = (1 - self.opts.loss_weight) * F.mse_loss(hard_Q, sampled_rewards) + self.opts.loss_weight * F.mse_loss(soft_Q, sampled_rewards)
         critic_loss = F.mse_loss(hard_Q, sampled_rewards) + F.mse_loss(soft_Q, hard_Q.detach())
-        # critic_loss = F.mse_loss(soft_Q, sampled_rewards)
         logger['critic_loss'].append(critic_loss.item())
 
         critic_loss.backward()
