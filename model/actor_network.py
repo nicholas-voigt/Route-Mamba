@@ -43,7 +43,8 @@ class SinkhornPermutationActor(nn.Module):
             hard_perm: (B, N, N) - permutation matrix (hard assignment of the tour)
         """
         # 1. Create Embeddings & normalize
-        embeddings = self.embedding_norm(self.feature_embedder(batch))  # (B, N, E)
+        embeddings = self.feature_embedder(batch)  # (B, N, E)
+        embeddings = self.embedding_norm(embeddings.permute(0, 2, 1)).permute(0, 2, 1)  # (B, N, E)
 
         # 2. Encoder: Layered Mamba blocks with internal Pre-LN
         encoded_features = self.encoder_norm(self.encoder(embeddings))    # (B, N, 2E)

@@ -39,11 +39,12 @@ class Critic(nn.Module):
             value: Tensor of shape (B, 1) representing the estimated Q-value for the (state, action) pair.
         """
         # Encode the State
-        state_embedding = self.state_embedding_norm(self.state_embedder(state)) # (B, N, E)
-        state_embedding = self.state_encoder_norm(self.state_encoder(state_embedding))  # (B, N, 2E)
+        state_embedding = self.state_embedder(state)  # (B, N, E)
+        state_embedding = self.state_embedding_norm(state_embedding.permute(0, 2, 1)).permute(0, 2, 1) # (B, N, E)
+        state_encoding = self.state_encoder_norm(self.state_encoder(state_embedding))  # (B, N, 2E)
 
         # Fuse State and Action
-        expected_tours = torch.bmm(action.transpose(1, 2), state_embedding)  # (B, N, 2E)
+        expected_tours = torch.bmm(action.transpose(1, 2), state_encoding)  # (B, N, 2E)
 
         # Decode Q-Value
         q = self.value_decoder(expected_tours.mean(dim=1))  # (B, 1)
