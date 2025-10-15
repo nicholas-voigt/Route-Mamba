@@ -61,7 +61,7 @@ pip3 install -q --no-cache-dir --no-build-isolation mamba-ssm
 
 # Submit your job to the cluster
 ## Parameters:
-TRAINER=spg
+TRAINER="spg"
 GRAPH_SIZE=20
 PROBLEM_SIZE=100000
 N_EPOCHS=5
