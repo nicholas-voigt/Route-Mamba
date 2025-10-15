@@ -143,7 +143,7 @@ class SPGTrainer:
         baseline_cost = compute_euclidean_tour(baseline_tours)
 
         ## Actor forward pass & tour construction & reward calculation
-        dense_actions, discrete_actions = self.actor(baseline_tours)
+        dense_actions, discrete_actions = self.actor(observation)
 
         ## Print one sample for soft and hard permutation matrices to verify sinkhorn output
         # if self.gradient_check:
@@ -177,12 +177,12 @@ class SPGTrainer:
                 dense_actions[batch_idxs, :, j] = dense_cols_i
 
         ## Reward calculation using soft actions (tour distributions)
-        actual_cost = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), baseline_tours))
+        actual_cost = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
         reward = (baseline_cost - actual_cost) * self.opts.reward_scale  # Apply reward scaling
 
         ## Add experience to replay buffer & log statistics
         replay_buffer.append(
-            observations = baseline_tours.detach(), 
+            observations = observation.detach(), 
             discrete_actions = discrete_actions.detach(), 
             dense_actions = dense_actions.detach(), 
             rewards = reward.detach()
