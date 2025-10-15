@@ -152,29 +152,29 @@ class SPGTrainer:
         #     print(discrete_actions[0])
 
         ## Epsilon-greedy exploration - perform swap in 2-opt-style to the current tour
-        if self.opts.epsilon > 0:
-            B, N, _ = discrete_actions.shape
-            device = discrete_actions.device
+        # if self.opts.epsilon > 0:
+        #     B, N, _ = discrete_actions.shape
+        #     device = discrete_actions.device
 
-            # Decide for each problem in batch individually if to perform exploration
-            explore_mask = torch.rand(B, device=device) < self.opts.epsilon
-            P = explore_mask.sum()  # number of problems to explore
-            if P > 0:
-                batch_idxs = torch.where(explore_mask)[0]  # indices of problems to explore
+        #     # Decide for each problem in batch individually if to perform exploration
+        #     explore_mask = torch.rand(B, device=device) < self.opts.epsilon
+        #     P = explore_mask.sum()  # number of problems to explore
+        #     if P > 0:
+        #         batch_idxs = torch.where(explore_mask)[0]  # indices of problems to explore
 
-                # select two random nodes for each selected problem in the batch
-                swap_nodes = torch.multinomial(torch.ones(P, N, device=device), num_samples=2, replacement=False)
-                i, j = swap_nodes[:, 0], swap_nodes[:, 1]
+        #         # select two random nodes for each selected problem in the batch
+        #         swap_nodes = torch.multinomial(torch.ones(P, N, device=device), num_samples=2, replacement=False)
+        #         i, j = swap_nodes[:, 0], swap_nodes[:, 1]
 
-                cols_i = discrete_actions[batch_idxs, :, i]
-                cols_j = discrete_actions[batch_idxs, :, j]
-                discrete_actions[batch_idxs, :, i] = cols_j
-                discrete_actions[batch_idxs, :, j] = cols_i
+        #         cols_i = discrete_actions[batch_idxs, :, i]
+        #         cols_j = discrete_actions[batch_idxs, :, j]
+        #         discrete_actions[batch_idxs, :, i] = cols_j
+        #         discrete_actions[batch_idxs, :, j] = cols_i
 
-                dense_cols_i = dense_actions[batch_idxs, :, i]
-                dense_cols_j = dense_actions[batch_idxs, :, j]
-                dense_actions[batch_idxs, :, i] = dense_cols_j
-                dense_actions[batch_idxs, :, j] = dense_cols_i
+        #         dense_cols_i = dense_actions[batch_idxs, :, i]
+        #         dense_cols_j = dense_actions[batch_idxs, :, j]
+        #         dense_actions[batch_idxs, :, i] = dense_cols_j
+        #         dense_actions[batch_idxs, :, j] = dense_cols_i
 
         ## Reward calculation using soft actions (tour distributions)
         actual_cost = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
