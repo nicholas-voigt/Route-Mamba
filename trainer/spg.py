@@ -143,7 +143,7 @@ class SPGTrainer:
         baseline_cost = compute_euclidean_tour(baseline_tours)
 
         ## Actor forward pass & tour construction & reward calculation
-        dense_actions, discrete_actions = self.actor(observation)
+        dense_actions, discrete_actions = self.actor(baseline_tours)
 
         ## Epsilon-greedy exploration - perform swap in 2-opt-style to the current tour
         if self.opts.epsilon > 0:
