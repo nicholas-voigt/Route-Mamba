@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from model import components as mc
 
@@ -57,15 +58,19 @@ class SinkhornPermutationActor(nn.Module):
         # 3. Score Construction: Multi-Head Attention with FFN and internal Pre-LN and projection to scores + identity bias
         score_matrix = self.score_constructor(encoded_features)  # (B, N, N)
         print("Score matrix sample:", score_matrix[0], sep="\n")  # Debug: Print a sample score matrix
+        # Manual Score Normalization
+        score_matrix = F.layer_norm(score_matrix, score_matrix.shape[1:], eps=1e-5)
+        print("Normalized score matrix sample:", score_matrix[0], sep="\n")  # Debug: Print a sample normalized score matrix
+        # Identity Bias
         identity_matrix = torch.eye(score_matrix.size(1), device=score_matrix.device) * self.identity_bias
         biased_score_matrix = score_matrix + identity_matrix
         print("Biased score matrix sample:", biased_score_matrix[0], sep="\n")  # Debug: Print a sample biased score matrix
 
         # 4. Decoder Workshop: Use Gumbel-Sinkhorn to get soft permutation matrix & hard assignment via tour construction
         soft_perm = self.decoder(biased_score_matrix)  # (B, N, N)
-        print("Soft permutation matrix sample:", soft_perm[0], sep="\n")  # Debug: Print a sample soft permutation matrix
         hard_perm = self.tour_constructor(soft_perm)
-
+        print("Soft permutation matrix sample:", soft_perm[0], sep="\n")  # Debug: Print a sample soft permutation matrix
+        print("Hard permutation matrix sample:", hard_perm[0], sep="\n")  # Debug: Print a sample hard permutation matrix
         return soft_perm, hard_perm
 
 

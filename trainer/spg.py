@@ -146,10 +146,10 @@ class SPGTrainer:
         dense_actions, discrete_actions = self.actor(baseline_tours)
 
         ## Print one sample for soft and hard permutation matrices to verify sinkhorn output
-        if self.gradient_check:
-            print("Sample permutation matrices:")
-            print(dense_actions[0])
-            print(discrete_actions[0])
+        # if self.gradient_check:
+        #     print("Sample permutation matrices:")
+        #     print(dense_actions[0])
+        #     print(discrete_actions[0])
 
         ## Epsilon-greedy exploration - perform swap in 2-opt-style to the current tour
         if self.opts.epsilon > 0:
