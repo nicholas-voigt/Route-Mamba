@@ -93,8 +93,8 @@ class SPGTrainer:
             print(f"-  Critic Learning Rate: {self.critic_optimizer.param_groups[0]['lr']:.6f}")
 
             logger = {
-                'initial_tour_length': [],
-                'actual_tour_length': [],
+                'baseline_cost': [],
+                'actual_cost': [],
                 'reward': [],
                 'actor_loss': [],
                 'critic_loss': []
@@ -115,8 +115,8 @@ class SPGTrainer:
             epoch_duration = time.time() - start_time
             print(f"Training Epoch {epoch} completed. Results:")
             print(f"-  Epoch Runtime: {epoch_duration:.2f}s")
-            print(f"-  Average Initial Tour Length: {sum(logger['initial_tour_length'])/len(logger['initial_tour_length']):.4f}")
-            print(f"-  Average Actual Tour Length: {sum(logger['actual_tour_length'])/len(logger['actual_tour_length']):.4f}")
+            print(f"-  Average Baseline Cost: {sum(logger['baseline_cost'])/len(logger['baseline_cost']):.4f}")
+            print(f"-  Average Actual Cost: {sum(logger['actual_cost'])/len(logger['actual_cost']):.4f}")
             print(f"-  Average Reward: {sum(logger['reward'])/len(logger['reward']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
             print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
@@ -137,10 +137,10 @@ class SPGTrainer:
         # --- ON-POLICY: Collect Experience ---
         ## get observations (initial tours) through heuristic from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
-        coords = batch['coordinates']
+        observation = batch['coordinates']
 
-        observation = get_initial_tours(coords, self.opts.tour_heuristic)
-        initial_tour_lengths = compute_euclidean_tour(observation)
+        baseline_tours = get_initial_tours(observation, self.opts.tour_heuristic)
+        baseline_cost = compute_euclidean_tour(baseline_tours)
 
         ## Actor forward pass & tour construction & reward calculation
         dense_actions, discrete_actions = self.actor(observation)
@@ -171,8 +171,8 @@ class SPGTrainer:
                 dense_actions[batch_idxs, :, j] = dense_cols_i
 
         ## Reward calculation using soft actions (tour distributions)
-        actual_tour_lengths = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
-        reward = (initial_tour_lengths - actual_tour_lengths) * self.opts.reward_scale  # Apply reward scaling
+        actual_cost = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
+        reward = -actual_cost * self.opts.reward_scale  # Apply reward scaling
 
         ## Add experience to replay buffer & log statistics
         replay_buffer.append(
@@ -181,8 +181,8 @@ class SPGTrainer:
             dense_actions = dense_actions.detach(), 
             rewards = reward.detach()
         )
-        logger['initial_tour_length'].append(initial_tour_lengths.mean().item())
-        logger['actual_tour_length'].append(actual_tour_lengths.mean().item())
+        logger['baseline_cost'].append(baseline_cost.mean().item())
+        logger['actual_cost'].append(actual_cost.mean().item())
         logger['reward'].append(reward.mean().item())
 
         # --- Off-Policy: Network Updates with Experience Replay ---
