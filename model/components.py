@@ -313,10 +313,12 @@ class GumbelSinkhornDecoder(nn.Module):
 
     # ---- Sinkhorn normalization ----
     def sinkhorn(self, scores: torch.Tensor) -> torch.Tensor:
+        # pre-normalize for numerical stability
+        scores = scores - scores.max(dim=-1, keepdim=True)[0]
         for _ in range(self.gs_iters):
             scores = scores - torch.logsumexp(scores, dim=2, keepdim=True)  # row norm
             scores = scores - torch.logsumexp(scores, dim=1, keepdim=True)  # col norm
-        return torch.exp(scores)
+        return torch.softmax(scores, dim=-1)
     
     def forward(self, scores: torch.Tensor) -> torch.Tensor:
         """
