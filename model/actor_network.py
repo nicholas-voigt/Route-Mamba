@@ -8,7 +8,7 @@ from model import components as mc
 class SinkhornPermutationActor(nn.Module):
     def __init__(self, input_dim, embedding_dim, kNN_neighbors, mamba_hidden_dim, mamba_layers, 
                  num_attention_heads, ffn_expansion, initial_identity_bias, gs_tau, gs_iters, method, dropout):
-        super().__init__()
+        super(SinkhornPermutationActor, self).__init__()
 
         # Model components
         self.feature_embedder = mc.StructuralEmbeddingNet(
