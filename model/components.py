@@ -91,12 +91,11 @@ class StructuralEmbeddingNet(nn.Module):
         # Structural Embedding via kNN distances
         # Compute pairwise distances & ignore self-distances
         dists = torch.cdist(x, x)
-        dists.fill_diagonal_(float("inf"))
+        dists.diagonal(dim1=1, dim2=2).fill_(float('inf'))
         # Get k nearest neighbors & encode their distances
-        k_nearest_indices = dists.topk(self.k, dim=-1, largest=False).indices
-        k_nearest_dists = dists.gather(2, k_nearest_indices)
-        k_nearest_emb = self.kNN_encoder(k_nearest_dists)  # [B, N, E // 2]
-        
+        distances, _ = dists.topk(self.k, dim=2, largest=False)
+        k_nearest_emb = self.kNN_encoder(distances)  # [B, N, E // 2]
+
         return torch.concat([node_emb, k_nearest_emb], dim=-1)  # [B, N, E]
 
 
