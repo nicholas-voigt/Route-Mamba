@@ -96,6 +96,6 @@ def log_gradients(model):
 
     print(f"Gradient check for model: {model.__class__.__name__}")
     print(f"Found gradients for {found_grads}/{total_params} parameters, {vanishing_grads} with vanishing gradients.")
-#     print("Gradient norms:")
-#     for name, norm in grad_norms.items():
-#         print(f"  {name}: {norm:.6f}")
+    print("Gradient norms:")
+    for name, norm in grad_norms.items():
+        print(f"  {name}: {norm:.6f}")
