@@ -103,7 +103,8 @@ class ARTrainer:
 
         # Calculate tour lengths & actor loss
         actual_tour_lengths = compute_euclidean_tour(torch.bmm(actions.transpose(1, 2), observation))
-        actor_loss = -((actual_tour_lengths - initial_tour_lengths) * log_prob_sums).mean() * self.opts.reward_scale  # Apply reward scaling
+        advantage = initial_tour_lengths - actual_tour_lengths
+        actor_loss = -(advantage * log_prob_sums).mean()
 
         # Logging
         logger['initial_tour_length'].append(initial_tour_lengths.mean().item())
