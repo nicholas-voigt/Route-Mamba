@@ -182,7 +182,7 @@ class SPGTrainer:
 
         ## Add experience to replay buffer & log statistics
         replay_buffer.append(
-            observations = observation.detach(), 
+            observations = baseline_tours.detach(), 
             discrete_actions = discrete_actions.detach(), 
             dense_actions = dense_actions.detach(), 
             rewards = reward.detach()
