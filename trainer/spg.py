@@ -177,7 +177,7 @@ class SPGTrainer:
                 dense_actions[batch_idxs, :, j] = dense_cols_i
 
         ## Reward calculation using soft actions (tour distributions)
-        actual_cost = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
+        actual_cost = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), baseline_tours))
         reward = (baseline_cost - actual_cost) * self.opts.reward_scale  # Apply reward scaling
 
         ## Add experience to replay buffer & log statistics
