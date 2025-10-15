@@ -52,7 +52,7 @@ class ARTrainer:
             print(f"-  Actor Learning Rate: {self.actor_optimizer.param_groups[0]['lr']:.6f}")
 
             logger = {
-                'initial_tour_length': [],
+                'baseline_tour_length': [],
                 'actual_tour_length': [],
                 'advantage': [],
                 'action_log_prob': [],
@@ -74,7 +74,7 @@ class ARTrainer:
             epoch_duration = time.time() - start_time
             print(f"Training Epoch {epoch} completed. Results:")
             print(f"-  Epoch Runtime: {epoch_duration:.2f}s")
-            print(f"-  Average Initial Tour Length: {sum(logger['initial_tour_length'])/len(logger['initial_tour_length']):.4f}")
+            print(f"-  Average Baseline Tour Length: {sum(logger['baseline_tour_length'])/len(logger['baseline_tour_length']):.4f}")
             print(f"-  Average Actual Tour Length: {sum(logger['actual_tour_length'])/len(logger['actual_tour_length']):.4f}")
             print(f"-  Average Advantage: {sum(logger['advantage'])/len(logger['advantage']):.4f}")
             print(f"-  Average Action Log Probability: {sum(logger['action_log_prob'])/len(logger['action_log_prob']):.4f}")
@@ -97,20 +97,17 @@ class ARTrainer:
         # Actor forward pass - TODO: Evaluate if epsilon-greedy 2-opt exploration is beneficial
         actions, prob_dist = self.actor(observation)
         log_prob_sums = (torch.log(prob_dist + 1e-9) * actions.detach()).sum(dim=(1, 2))  # (B,)
-        reward = -compute_euclidean_tour(torch.bmm(actions.transpose(1, 2), observation))  # (B,)
+        actor_tour_lengths = compute_euclidean_tour(torch.bmm(actions.transpose(1, 2), observation))  # (B,)
 
         # Calculate actor loss with baseline
-        baseline = reward.mean()
-        advantage = reward - baseline
-        actor_loss = -(advantage * log_prob_sums).mean()
-
-        # Greedy reference for logging
-        initial_tours = get_initial_tours(observation, self.opts.tour_heuristic)
-        initial_tour_lengths = compute_euclidean_tour(initial_tours)  # (B,)
+        baseline_tours = get_initial_tours(observation, self.opts.tour_heuristic)
+        baseline_tour_lengths = compute_euclidean_tour(baseline_tours)
+        advantage = baseline_tour_lengths - actor_tour_lengths
+        actor_loss = -(advantage.detach() * log_prob_sums).mean()
 
         # Logging
-        logger['initial_tour_length'].append(initial_tour_lengths.mean().item())
-        logger['actual_tour_length'].append(-reward.mean().item())
+        logger['baseline_tour_length'].append(baseline_tour_lengths.mean().item())
+        logger['actual_tour_length'].append(actor_tour_lengths.mean().item())
         logger['advantage'].append(advantage.mean().item())
         logger['action_log_prob'].append(log_prob_sums.mean().item())
         logger['actor_loss'].append(actor_loss.item())
