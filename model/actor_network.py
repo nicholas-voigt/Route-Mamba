@@ -11,14 +11,14 @@ class SinkhornPermutationActor(nn.Module):
 
         # Model components
         self.feature_embedder = nn.Linear(input_dim, embedding_dim, bias=False)
-        self.embedding_norm = nn.LayerNorm(embedding_dim)
+        self.embedding_norm = nn.BatchNorm1d(embedding_dim)
         self.encoder = mc.BidirectionalMambaEncoder(
             mamba_model_size = embedding_dim,
             mamba_hidden_state_size = mamba_hidden_dim,
             dropout = dropout,
             mamba_layers = mamba_layers
         )
-        self.encoder_norm = nn.LayerNorm(2 * embedding_dim)
+        self.encoder_norm = nn.BatchNorm1d(2 * embedding_dim)
         self.score_constructor = mc.AttentionScoreHead(
             model_dim = 2 * embedding_dim,
             num_heads = num_attention_heads,

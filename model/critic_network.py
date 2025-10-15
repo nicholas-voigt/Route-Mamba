@@ -11,13 +11,14 @@ class Critic(nn.Module):
 
         # State Encoder
         self.state_embedder = nn.Linear(input_dim, embedding_dim, bias=False)
-        self.state_embedding_norm = nn.LayerNorm(embedding_dim)
+        self.state_embedding_norm = nn.BatchNorm1d(embedding_dim)
         self.state_encoder = BidirectionalMambaEncoder(
             mamba_model_size = embedding_dim,
             mamba_hidden_state_size = mamba_hidden_dim,
             dropout = dropout,
             mamba_layers = mamba_layers
         )
+        self.state_encoder_norm = nn.BatchNorm1d(2 * embedding_dim)
 
         # Value Decoder
         self.value_decoder = MLP(
@@ -39,7 +40,7 @@ class Critic(nn.Module):
         """
         # Encode the State
         state_embedding = self.state_embedding_norm(self.state_embedder(state)) # (B, N, E)
-        state_embedding = self.state_encoder(state_embedding)  # (B, N, 2E)
+        state_embedding = self.state_encoder_norm(self.state_encoder(state_embedding))  # (B, N, 2E)
 
         # Fuse State and Action
         expected_tours = torch.bmm(action.transpose(1, 2), state_embedding)  # (B, N, 2E)
