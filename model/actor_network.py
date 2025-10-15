@@ -47,7 +47,8 @@ class SinkhornPermutationActor(nn.Module):
         embeddings = self.embedding_norm(embeddings.permute(0, 2, 1)).permute(0, 2, 1)  # (B, N, E)
 
         # 2. Encoder: Layered Mamba blocks with internal Pre-LN
-        encoded_features = self.encoder_norm(self.encoder(embeddings))    # (B, N, 2E)
+        encoded_features = self.encoder(embeddings)
+        encoded_features = self.encoder_norm(encoded_features.permute(0, 2, 1)).permute(0, 2, 1)   # (B, N, 2E)
 
         # 3. Score Construction: Multi-Head Attention with FFN and internal Pre-LN and projection to scores + identity bias
         score_matrix = self.score_constructor(encoded_features)  # (B, N, N)
