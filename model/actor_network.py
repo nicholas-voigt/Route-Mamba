@@ -11,14 +11,14 @@ class SinkhornPermutationActor(nn.Module):
 
         # Model components
         self.feature_embedder = nn.Linear(input_dim, embedding_dim, bias=False)
-        self.embedding_norm = nn.BatchNorm1d(embedding_dim)
+        self.embedding_norm = nn.LayerNorm(embedding_dim)
         self.encoder = mc.BidirectionalMambaEncoder(
             mamba_model_size = embedding_dim,
             mamba_hidden_state_size = mamba_hidden_dim,
             dropout = dropout,
             mamba_layers = mamba_layers
         )
-        self.encoder_norm = nn.BatchNorm1d(2 * embedding_dim)
+        self.encoder_norm = nn.LayerNorm(2 * embedding_dim)
         self.score_constructor = mc.AttentionScoreHead(
             model_dim = 2 * embedding_dim,
             num_heads = num_attention_heads,
@@ -44,11 +44,11 @@ class SinkhornPermutationActor(nn.Module):
         """
         # 1. Create Embeddings & normalize
         embeddings = self.feature_embedder(batch)  # (B, N, E)
-        embeddings = self.embedding_norm(embeddings.permute(0, 2, 1)).permute(0, 2, 1)  # (B, N, E)
+        embeddings = self.embedding_norm(embeddings)  # (B, N, E)
 
         # 2. Encoder: Layered Mamba blocks with internal Pre-LN
         encoded_features = self.encoder(embeddings)
-        encoded_features = self.encoder_norm(encoded_features.permute(0, 2, 1)).permute(0, 2, 1)   # (B, N, 2E)
+        encoded_features = self.encoder_norm(encoded_features)   # (B, N, 2E)
 
         # 3. Score Construction: Multi-Head Attention with FFN and internal Pre-LN and projection to scores + identity bias
         score_matrix = self.score_constructor(encoded_features)  # (B, N, N)
