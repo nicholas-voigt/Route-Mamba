@@ -122,7 +122,7 @@ class SPGTrainer:
 
         # Loss calculation using actual cost & auxiliary term to align probabilistic actions with discrete actions
         actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), observation))
-        actor_loss = torch.sum(actual_cost) + F.mse_loss(probs, action.detach(), reduction='sum')
+        actor_loss = torch.sum(actual_cost) + self.opts.lambda_mse_loss * F.mse_loss(probs, action.detach(), reduction='sum')
 
         # expected_cost = compute_euclidean_tour(torch.bmm(probs.transpose(1, 2), observation))
         # actor_loss = torch.sum((actual_cost + expected_cost) / 2.0) # calculate loss as mean of actual and expected cost and sum over batch
