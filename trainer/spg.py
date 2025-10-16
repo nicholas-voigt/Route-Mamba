@@ -145,66 +145,20 @@ class SPGTrainer:
         ## Actor forward pass & tour construction & reward calculation
         dense_actions, discrete_actions = self.actor(observation)
 
-        ## Print one sample for soft and hard permutation matrices to verify sinkhorn output
-        # if self.gradient_check:
-        #     print("Sample permutation matrices:")
-        #     print(dense_actions[0])
-        #     print(discrete_actions[0])
-
-        ## Epsilon-greedy exploration - perform swap in 2-opt-style to the current tour
-        # if self.opts.epsilon > 0:
-        #     B, N, _ = discrete_actions.shape
-        #     device = discrete_actions.device
-
-        #     # Decide for each problem in batch individually if to perform exploration
-        #     explore_mask = torch.rand(B, device=device) < self.opts.epsilon
-        #     P = explore_mask.sum()  # number of problems to explore
-        #     if P > 0:
-        #         batch_idxs = torch.where(explore_mask)[0]  # indices of problems to explore
-
-        #         # select two random nodes for each selected problem in the batch
-        #         swap_nodes = torch.multinomial(torch.ones(P, N, device=device), num_samples=2, replacement=False)
-        #         i, j = swap_nodes[:, 0], swap_nodes[:, 1]
-
-        #         cols_i = discrete_actions[batch_idxs, :, i]
-        #         cols_j = discrete_actions[batch_idxs, :, j]
-        #         discrete_actions[batch_idxs, :, i] = cols_j
-        #         discrete_actions[batch_idxs, :, j] = cols_i
-
-        #         dense_cols_i = dense_actions[batch_idxs, :, i]
-        #         dense_cols_j = dense_actions[batch_idxs, :, j]
-        #         dense_actions[batch_idxs, :, i] = dense_cols_j
-        #         dense_actions[batch_idxs, :, j] = dense_cols_i
-
         ## Reward calculation using soft actions (tour distributions)
         actual_cost = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
         reward = (baseline_cost - actual_cost) * self.opts.reward_scale  # Apply reward scaling
 
-        ## Add experience to replay buffer & log statistics
-        replay_buffer.append(
-            observations = observation.detach(), 
-            discrete_actions = discrete_actions.detach(), 
-            dense_actions = dense_actions.detach(), 
-            rewards = reward.detach()
-        )
         logger['baseline_cost'].append(baseline_cost.mean().item())
         logger['actual_cost'].append(actual_cost.mean().item())
         logger['reward'].append(reward.mean().item())
 
-        # --- Off-Policy: Network Updates with Experience Replay ---
-        ## Do not proceed with training if the buffer is not full enough
-        if len(replay_buffer) < self.opts.batch_size:
-            return
-        sampled_obs, sampled_disc_actions, sampled_dense_actions, sampled_rewards = replay_buffer.sample(self.opts.batch_size)
-
-        # Critic Update - compute Q(s, a) from hard and soft actions
-        # this is to ensure connection to the real environment (via hard) and 
-        # to provide a smooth gradient signal (via soft)
+        ## Critic Update - compute Q(s, a) from hard and soft actions
         self.critic_optimizer.zero_grad()
 
-        hard_Q = self.critic(sampled_obs, sampled_disc_actions)
-        soft_Q = self.critic(sampled_obs, sampled_dense_actions)
-        critic_loss = F.mse_loss(hard_Q, sampled_rewards) + F.mse_loss(soft_Q, hard_Q.detach())
+        hard_Q = self.critic(observation, discrete_actions)
+        soft_Q = self.critic(observation, dense_actions)
+        critic_loss = F.mse_loss(hard_Q, reward) + F.mse_loss(soft_Q, hard_Q.detach())
         logger['critic_loss'].append(critic_loss.item())
 
         critic_loss.backward()
@@ -213,13 +167,11 @@ class SPGTrainer:
             log_gradients(self.critic)
         self.critic_optimizer.step()
 
-        # Actor Update - compute policy gradient loss using the soft actions
-        # for improved gradient signal. Generate new actions for the sampled observations.
-        # Actor loss is computed as negative Q value to maximize expected reward.
+        # Actor Update - compute policy gradient loss using the soft Q values
+        self.critic_optimizer.zero_grad()
         self.actor_optimizer.zero_grad()
 
-        new_dense_actions, _ = self.actor(sampled_obs)
-        actor_loss = -self.critic(sampled_obs, new_dense_actions).mean()
+        actor_loss = -soft_Q.mean()
         logger['actor_loss'].append(actor_loss.item())
 
         actor_loss.backward()
