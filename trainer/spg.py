@@ -120,6 +120,31 @@ class SPGTrainer:
         # Actor forward pass to generate discrete actions (tour permutations) and probabilistic actions (tour distributions)
         probs, action = self.actor(observation)
 
+        ## Epsilon-greedy exploration - perform swap in 2-opt-style to the current tour
+        if self.opts.epsilon > 0:
+            B, N, _ = action.shape
+            device = action.device
+
+            # Decide for each problem in batch individually if to perform exploration
+            explore_mask = torch.rand(B, device=device) < self.opts.epsilon
+            P = explore_mask.sum()  # number of problems to explore
+            if P > 0:
+                batch_idxs = torch.where(explore_mask)[0]  # indices of problems to explore
+
+                # select two random nodes for each selected problem in the batch
+                swap_nodes = torch.multinomial(torch.ones(P, N, device=device), num_samples=2, replacement=False)
+                i, j = swap_nodes[:, 0], swap_nodes[:, 1]
+
+                cols_i = action[batch_idxs, :, i]
+                cols_j = action[batch_idxs, :, j]
+                action[batch_idxs, :, i] = cols_j
+                action[batch_idxs, :, j] = cols_i
+
+                dense_cols_i = probs[batch_idxs, :, i]
+                dense_cols_j = probs[batch_idxs, :, j]
+                probs[batch_idxs, :, i] = dense_cols_j
+                probs[batch_idxs, :, j] = dense_cols_i
+
         # Loss calculation using actual cost & auxiliary term to align probabilistic actions with discrete actions
         actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), observation))
         actor_loss = torch.sum(actual_cost) + self.opts.lambda_mse_loss * F.mse_loss(probs, action.detach(), reduction='sum')
