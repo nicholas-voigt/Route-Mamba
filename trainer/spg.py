@@ -123,7 +123,7 @@ class SPGTrainer:
         # Loss calculation
         actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), observation))
         expected_cost = compute_euclidean_tour(torch.bmm(probs.transpose(1, 2), observation))
-        actor_loss = torch.sum(torch.mean(actual_cost, expected_cost)) # calculate loss as mean of actual and expected cost and sum over batch
+        actor_loss = torch.sum((actual_cost + expected_cost) / 2.0) # calculate loss as mean of actual and expected cost and sum over batch
 
         # Logging
         logger['baseline_cost'].append(baseline_cost.mean().item())
