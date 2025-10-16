@@ -156,7 +156,7 @@ class SPGTrainer:
         # Actor Update - compute policy gradient loss using the soft Q values
         self.actor_optimizer.zero_grad()
 
-        actor_loss = -reward
+        actor_loss = -reward.mean()
         logger['actor_loss'].append(actor_loss.item())
 
         actor_loss.backward()
