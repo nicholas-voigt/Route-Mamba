@@ -143,7 +143,7 @@ class SPGTrainer:
         baseline_cost = compute_euclidean_tour(baseline_tours)
 
         ## Actor forward pass & tour construction & reward calculation
-        dense_actions, discrete_actions = self.actor(observation)
+        _, discrete_actions = self.actor(observation)
 
         ## Reward calculation using soft actions (tour distributions)
         actual_cost = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
@@ -153,25 +153,10 @@ class SPGTrainer:
         logger['actual_cost'].append(actual_cost.mean().item())
         logger['reward'].append(reward.mean().item())
 
-        ## Critic Update - compute Q(s, a) from hard and soft actions
-        self.critic_optimizer.zero_grad()
-
-        hard_Q = self.critic(observation, discrete_actions)
-        soft_Q = self.critic(observation, dense_actions)
-        critic_loss = F.mse_loss(hard_Q, reward) + F.mse_loss(soft_Q, hard_Q.detach())
-        logger['critic_loss'].append(critic_loss.item())
-
-        critic_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
-        if self.gradient_check:
-            log_gradients(self.critic)
-        self.critic_optimizer.step()
-
         # Actor Update - compute policy gradient loss using the soft Q values
-        self.critic_optimizer.zero_grad()
         self.actor_optimizer.zero_grad()
 
-        actor_loss = -soft_Q.mean()
+        actor_loss = -reward
         logger['actor_loss'].append(actor_loss.item())
 
         actor_loss.backward()
