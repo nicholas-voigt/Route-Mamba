@@ -13,8 +13,7 @@ class SinkhornPermutationActor(nn.Module):
         # Model components
         self.feature_embedder = mc.StructuralEmbeddingNet(
             input_dim = input_dim,
-            embedding_dim = embedding_dim,
-            k = kNN_neighbors
+            embedding_dim = embedding_dim
         )
         self.embedding_norm = nn.LayerNorm(embedding_dim)
         self.encoder = mc.BidirectionalMambaEncoder(

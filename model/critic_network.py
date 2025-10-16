@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from model.components import StructuralEmbeddingNet, BidirectionalMambaEncoder, MLP
+from model.components import KNNEmbeddingNet, BidirectionalMambaEncoder, MLP
 
 
 class Critic(nn.Module):
@@ -10,7 +10,7 @@ class Critic(nn.Module):
         super(Critic, self).__init__()
 
         # State Encoder
-        self.state_embedder = StructuralEmbeddingNet(
+        self.state_embedder = KNNEmbeddingNet(
             input_dim = input_dim,
             embedding_dim = embedding_dim,
             k = kNN_neighbors
