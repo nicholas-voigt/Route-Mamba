@@ -38,35 +38,15 @@ class SPGTrainer:
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=opts.actor_lr)
         self.actor_scheduler = optim.lr_scheduler.LambdaLR(self.actor_optimizer, lambda epoch: opts.actor_lr_decay ** epoch)
 
-        # Initialize the critic with optimizer, learning rate scheduler and loss function
-        if opts.critic_load_path:
-            print(f"Loading critic model from {opts.critic_load_path}")
-            self.critic = torch.load(opts.critic_load_path, map_location=opts.device)
-        else:
-            self.critic = Critic(
-                input_dim = opts.input_dim,
-                embedding_dim = opts.embedding_dim,
-                kNN_neighbors = opts.kNN_neighbors,
-                mamba_hidden_dim = opts.mamba_hidden_dim,
-                mamba_layers = opts.mamba_layers,
-                dropout = opts.dropout,
-                mlp_ff_dim = opts.mlp_ff_dim,
-                mlp_embedding_dim = opts.mlp_embedding_dim
-            ).to(opts.device)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=opts.critic_lr)
-        self.critic_scheduler = optim.lr_scheduler.LambdaLR(self.critic_optimizer, lambda epoch: opts.critic_lr_decay ** epoch)
-
 
     def train(self):
         torch.set_grad_enabled(True)
         self.actor.train()
-        if not self.opts.eval_only: self.critic.train()
 
 
     def eval(self):
         torch.set_grad_enabled(False)
         self.actor.eval()
-        if not self.opts.eval_only: self.critic.eval()
 
 
     def start_training(self, problem):
@@ -90,14 +70,12 @@ class SPGTrainer:
             print(f"-  Replay Buffer Size: {len(replay_buffer)}")
             print(f"-  Actor Learning Rate: {self.actor_optimizer.param_groups[0]['lr']:.6f}")
             print(f"-  Actor Sinkhorn Temperature: {self.actor.decoder.gs_tau:.6f}")
-            print(f"-  Critic Learning Rate: {self.critic_optimizer.param_groups[0]['lr']:.6f}")
 
             logger = {
                 'baseline_cost': [],
                 'actual_cost': [],
                 'reward': [],
-                'actor_loss': [],
-                'critic_loss': []
+                'actor_loss': []
             }
 
             start_time = time.time()
@@ -119,16 +97,13 @@ class SPGTrainer:
             print(f"-  Average Actual Cost: {sum(logger['actual_cost'])/len(logger['actual_cost']):.4f}")
             print(f"-  Average Reward: {sum(logger['reward'])/len(logger['reward']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
-            print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
 
             # update learning rate and sinkhorn temperature
             self.actor.decoder.gs_tau *= self.opts.sinkhorn_tau_decay
             self.actor_scheduler.step()
-            self.critic_scheduler.step()
 
             if (self.opts.checkpoint_epochs != 0 and epoch % self.opts.checkpoint_epochs == 0) or epoch == self.opts.n_epochs - 1:
                 torch.save(self.actor, f"{self.opts.save_dir}/actor_{self.opts.problem}_epoch{epoch + 1}.pt")
-                torch.save(self.critic, f"{self.opts.save_dir}/critic_{self.opts.problem}_epoch{epoch + 1}.pt")
                 print(f"Saved actor and critic models at epoch {epoch + 1} to {self.opts.save_dir}")
 
 
