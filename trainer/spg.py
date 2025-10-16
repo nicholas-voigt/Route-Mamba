@@ -95,7 +95,7 @@ class SPGTrainer:
             print(f"-  Epoch Runtime: {epoch_duration:.2f}s")
             print(f"-  Average Baseline Cost: {sum(logger['baseline_cost'])/len(logger['baseline_cost']):.4f}")
             print(f"-  Average Actual Cost: {sum(logger['actual_cost'])/len(logger['actual_cost']):.4f}")
-            print(f"-  Average Expected Cost: {sum(logger['expected_cost'])/len(logger['expected_cost']):.4f}")
+            # print(f"-  Average Expected Cost: {sum(logger['expected_cost'])/len(logger['expected_cost']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
 
             # update learning rate and sinkhorn temperature
@@ -120,15 +120,17 @@ class SPGTrainer:
         # Actor forward pass to generate discrete actions (tour permutations) and probabilistic actions (tour distributions)
         probs, action = self.actor(observation)
 
-        # Loss calculation
+        # Loss calculation using actual cost & auxiliary term to align probabilistic actions with discrete actions
         actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), observation))
-        expected_cost = compute_euclidean_tour(torch.bmm(probs.transpose(1, 2), observation))
-        actor_loss = torch.sum((actual_cost + expected_cost) / 2.0) # calculate loss as mean of actual and expected cost and sum over batch
+        actor_loss = torch.sum(actual_cost) + F.mse_loss(probs, action.detach(), reduction='sum')
+
+        # expected_cost = compute_euclidean_tour(torch.bmm(probs.transpose(1, 2), observation))
+        # actor_loss = torch.sum((actual_cost + expected_cost) / 2.0) # calculate loss as mean of actual and expected cost and sum over batch
 
         # Logging
         logger['baseline_cost'].append(baseline_cost.mean().item())
         logger['actual_cost'].append(actual_cost.mean().item())
-        logger['expected_cost'].append(expected_cost.mean().item())
+        # logger['expected_cost'].append(expected_cost.mean().item())
         logger['actor_loss'].append(actor_loss.item())
 
         # Actor Update
