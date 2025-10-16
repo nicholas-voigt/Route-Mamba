@@ -118,10 +118,10 @@ class SPGTrainer:
         baseline_cost = compute_euclidean_tour(baseline_tours)
 
         # Actor forward pass to generate discrete actions (tour permutations) and probabilistic actions (tour distributions)
-        probs, action = self.actor(baseline_tours)
+        probs, action = self.actor(observation)
 
         # Loss calculation using actual cost & auxiliary term to align probabilistic actions with discrete actions
-        actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), baseline_tours))
+        actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), observation))
         actor_loss = torch.sum(actual_cost) + self.opts.lambda_mse_loss * F.mse_loss(probs, action.detach(), reduction='sum')
 
         # expected_cost = compute_euclidean_tour(torch.bmm(probs.transpose(1, 2), observation))
