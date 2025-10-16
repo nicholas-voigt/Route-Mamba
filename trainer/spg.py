@@ -117,22 +117,22 @@ class SPGTrainer:
         baseline_tours = get_initial_tours(observation, self.opts.tour_heuristic)
         baseline_cost = compute_euclidean_tour(baseline_tours)
 
-        ## Actor forward pass & tour construction & reward calculation
-        _, discrete_actions = self.actor(observation)
+        # Actor forward pass to generate discrete actions (tour permutations) and probabilistic actions (tour distributions)
+        probs, action = self.actor(observation)
 
-        ## Reward calculation using soft actions (tour distributions)
-        actual_cost = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), observation))
-        reward = (baseline_cost - actual_cost) * self.opts.reward_scale  # Apply reward scaling
+        # Loss calculation
+        actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), observation))
+        expected_cost = compute_euclidean_tour(torch.bmm(probs.transpose(1, 2), observation))
+        actor_loss = torch.sum(torch.mean(actual_cost, expected_cost)) # calculate loss as mean of actual and expected cost and sum over batch
 
+        # Logging
         logger['baseline_cost'].append(baseline_cost.mean().item())
         logger['actual_cost'].append(actual_cost.mean().item())
-        logger['reward'].append(reward.mean().item())
-
-        # Actor Update - compute policy gradient loss using the soft Q values
-        self.actor_optimizer.zero_grad()
-
-        actor_loss = -reward.mean()
+        logger['expected_cost'].append(expected_cost.mean().item())
         logger['actor_loss'].append(actor_loss.item())
+
+        # Actor Update
+        self.actor_optimizer.zero_grad()
 
         actor_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1.0)
