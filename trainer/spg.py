@@ -74,7 +74,7 @@ class SPGTrainer:
             logger = {
                 'baseline_cost': [],
                 'actual_cost': [],
-                'reward': [],
+                'expected_cost': [],
                 'actor_loss': []
             }
 
@@ -95,7 +95,7 @@ class SPGTrainer:
             print(f"-  Epoch Runtime: {epoch_duration:.2f}s")
             print(f"-  Average Baseline Cost: {sum(logger['baseline_cost'])/len(logger['baseline_cost']):.4f}")
             print(f"-  Average Actual Cost: {sum(logger['actual_cost'])/len(logger['actual_cost']):.4f}")
-            print(f"-  Average Reward: {sum(logger['reward'])/len(logger['reward']):.4f}")
+            print(f"-  Average Expected Cost: {sum(logger['expected_cost'])/len(logger['expected_cost']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
 
             # update learning rate and sinkhorn temperature
