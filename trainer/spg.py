@@ -134,7 +134,7 @@ class SPGTrainer:
         # Actor Update
         self.actor_optimizer.zero_grad()
 
-        (-actor_loss).backward()
+        actor_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1.0)
         if self.gradient_check:
             log_gradients(self.actor)
