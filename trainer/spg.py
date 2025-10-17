@@ -135,15 +135,15 @@ class SPGTrainer:
                 swap_nodes = torch.multinomial(torch.ones(P, N, device=device), num_samples=2, replacement=False)
                 i, j = swap_nodes[:, 0], swap_nodes[:, 1]
 
-                cols_i = action[batch_idxs, :, i]
-                cols_j = action[batch_idxs, :, j]
-                action[batch_idxs, :, i] = cols_j
-                action[batch_idxs, :, j] = cols_i
+                actions_i = action[batch_idxs, :, i].clone()
+                actions_j = action[batch_idxs, :, j].clone()
+                action[batch_idxs, :, i] = actions_j
+                action[batch_idxs, :, j] = actions_i
 
-                dense_cols_i = probs[batch_idxs, :, i]
-                dense_cols_j = probs[batch_idxs, :, j]
-                probs[batch_idxs, :, i] = dense_cols_j
-                probs[batch_idxs, :, j] = dense_cols_i
+                probs_i = probs[batch_idxs, :, i].clone()
+                probs_j = probs[batch_idxs, :, j].clone()
+                probs[batch_idxs, :, i] = probs_j
+                probs[batch_idxs, :, j] = probs_i
 
         # Loss calculation using actual cost & auxiliary term to align probabilistic actions with discrete actions
         actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), observation))
