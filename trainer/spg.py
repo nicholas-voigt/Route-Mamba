@@ -131,6 +131,10 @@ class SPGTrainer:
             if P > 0:
                 batch_idxs = torch.where(explore_mask)[0]  # indices of problems to explore
 
+                # Clone the action and probs tensors to avoid in-place operations on the original tensors
+                action = action.clone()
+                probs = probs.clone()
+
                 # select two random nodes for each selected problem in the batch
                 swap_nodes = torch.multinomial(torch.ones(P, N, device=device), num_samples=2, replacement=False)
                 i, j = swap_nodes[:, 0], swap_nodes[:, 1]
