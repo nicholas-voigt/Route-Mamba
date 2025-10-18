@@ -490,8 +490,8 @@ class ARPointerDecoder(nn.Module):
             graph_emb: (B, 2E) - graph embedding
             node_emb: (B, N, 2E) - node embeddings
         Returns:
-            tour: (B, N, N) - permutation matrix representing the tour
-            probs: (B, N, N) - log probabilities the tours
+            probs: (B, N, N) - probability distribution over the tours
+            tour: (B, N, N) - permutation matrix representing the actual tour
         """
         B, N, _ = node_emb.shape
         device = node_emb.device
@@ -536,7 +536,7 @@ class ARPointerDecoder(nn.Module):
             mask = mask.clone()
             mask[batch_indices, next_node_idx] = True
 
-        return tour_matrix, prob_matrix
+        return prob_matrix, tour_matrix
 
 
 class ConvolutionBlock(nn.Module):

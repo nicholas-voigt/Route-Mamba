@@ -73,7 +73,10 @@ class ARPointerActor(nn.Module):
         super().__init__()
 
         # Model components
-        self.feature_embedder = nn.Linear(input_dim, embedding_dim, bias=False)
+        self.feature_embedder = mc.StructuralEmbeddingNet(
+            input_dim = input_dim,
+            embedding_dim = embedding_dim
+        )
         self.embedding_norm = nn.LayerNorm(embedding_dim)
         self.encoder = mc.BidirectionalMambaEncoder(
             mamba_model_size = embedding_dim,
@@ -81,7 +84,7 @@ class ARPointerActor(nn.Module):
             dropout = dropout,
             mamba_layers = mamba_layers
         )
-        self.encoder_norm = nn.LayerNorm(2 * embedding_dim) # Because of bidirectional, output dim = 2 * input dim
+        self.encoder_norm = nn.LayerNorm(2 * embedding_dim)
         self.decoder = mc.ARPointerDecoder(
             embedding_dim = 2 * embedding_dim,
             mamba_hidden_dim = 256,
@@ -95,18 +98,19 @@ class ARPointerActor(nn.Module):
         Args:
             batch: (B, N, I) - node features with 2D coordinates
         Returns:
-            tour: (B, N, N) - permutation matrix representing the tour
             prob_dist: (B, N, N) - probability distribution over next nodes at each step
+            tour: (B, N, N) - permutation matrix representing the tour
         """
         # 1. Create Embeddings & normalize
-        embeddings = self.embedding_norm(self.feature_embedder(batch))  # (B, N, E)
+        embeddings = self.feature_embedder(batch)  # (B, N, E)
+        embeddings = self.embedding_norm(embeddings)  # (B, N, E)
 
-        # 2. Encoding Workshop: Layered Mamba blocks with internal Pre-LN and external Post-LN
-        encoded_features = self.encoder(embeddings)   # (B, N, 2M)
-        encoded_features = self.encoder_norm(encoded_features)   # (B, N, 2M)
-        encoded_graph = encoded_features.mean(dim=1)  # (B, 2M)
+        # 2. Encoder: Layered Mamba blocks with internal Pre-LN
+        encoded_features = self.encoder(embeddings)
+        encoded_features = self.encoder_norm(encoded_features)   # (B, N, 2E)
+        encoded_graph = encoded_features.mean(dim=1)  # (B, 2E)
 
         # 3. Decoding Workshop: Autoregressive Pointer Network
-        hard_perm, prob_dist = self.decoder(encoded_graph, encoded_features)  # (B, N, N), (B, N, N)
+        prob_dist, hard_perm = self.decoder(encoded_graph, encoded_features)  # (B, N, N), (B, N, N)
 
-        return hard_perm, prob_dist
+        return prob_dist, hard_perm
