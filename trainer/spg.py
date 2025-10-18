@@ -50,11 +50,9 @@ class SPGTrainer:
 
 
     def start_training(self, problem):
-        # prepare datasets
+        # prepare validation dataset
         val_dataset = problem.make_dataset(
             size=self.opts.graph_size, num_samples=self.opts.eval_size, filename=self.opts.val_dataset)
-        train_dataset = problem.make_dataset(
-            size=self.opts.graph_size, num_samples=self.opts.problem_size)
 
         # Initialize the memory buffer for experience replay
         replay_buffer = Memory(
@@ -66,6 +64,11 @@ class SPGTrainer:
 
         # start training loop
         for epoch in range(self.opts.n_epochs):
+            # prepare training dataset
+            train_dataset = problem.make_dataset(size=self.opts.graph_size, num_samples=self.opts.problem_size)
+            training_dataloader = DataLoader(dataset=train_dataset, batch_size=self.opts.batch_size)
+
+            # Logging
             print(f"\nTraining Epoch {epoch}:")
             print(f"-  Replay Buffer Size: {len(replay_buffer)}")
             print(f"-  Actor Learning Rate: {self.actor_optimizer.param_groups[0]['lr']:.6f}")
@@ -78,14 +81,10 @@ class SPGTrainer:
                 'actor_loss': []
             }
 
-            start_time = time.time()
-
+            # training batch loop
             self.train()
-            training_dataloader = DataLoader(
-                dataset=train_dataset,
-                batch_size=self.opts.batch_size,
-            )
             self.gradient_check = True
+            start_time = time.time()
 
             for _, batch in enumerate(tqdm(training_dataloader, disable=self.opts.no_progress_bar)):
                 self.train_batch(batch, replay_buffer, logger)
