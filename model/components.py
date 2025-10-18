@@ -6,7 +6,7 @@ import math
 from mamba_ssm import Mamba
 
 
-class EmbeddingNet(nn.Module):
+class CyclicEmbeddingNet(nn.Module):
     def __init__(self, input_dim: int, embedding_dim: int, num_harmonics: int, alpha: float):
         """
         Embedding Network for node features.
@@ -17,7 +17,7 @@ class EmbeddingNet(nn.Module):
             num_harmonics: Number of harmonics for cyclic encoding (recommended: <= N/2)
             alpha: Scaling factor for frequency base
         """
-        super(EmbeddingNet, self).__init__()
+        super(CyclicEmbeddingNet, self).__init__()
         self.node_feature_encoder = nn.Linear(input_dim, embedding_dim, bias=False)   # Linear layer for node feature embedding
         self.cyclic_projection = nn.Linear(2 * num_harmonics, embedding_dim, bias=False)  # Linear layer to project harmonics to Embedding space
         self.k = num_harmonics  # Number of harmonics
@@ -58,6 +58,83 @@ class EmbeddingNet(nn.Module):
         ce = self.cyclic_encoding(N, x.device).unsqueeze(0).repeat(B, 1, 1)  # [B, N, 2K]
         ce = self.cyclic_projection(ce)  # [B, N, E]
         return nfe, ce
+
+
+class KNNEmbeddingNet(nn.Module):
+    def __init__(self, input_dim: int, embedding_dim: int, k: int | None = None):
+        """
+        Embedding Network for node features.
+        Performs node feature embedding and structural embedding k-Nearest-Neighbour adaptation.
+        kNN selects the k nearest neighbours based on pairwise distances and encodes their distances.
+        Args:
+            input_dim: Dimension of input node features (e.g., 2 for 2D coordinates)
+            embedding_dim: Dimension of the output embeddings (must be even)
+            k: optional, number of nearest neighbours to consider (default: embedding_dim // 2)
+        """
+        super(KNNEmbeddingNet, self).__init__()
+        assert embedding_dim % 2 == 0, "Embedding dimension must be even for structural embedding."
+
+        self.node_feature_encoder = nn.Linear(input_dim, embedding_dim // 2, bias=False)   # Linear layer for node feature embedding
+        self.k = k if k is not None else embedding_dim // 2
+        self.kNN_encoder = nn.Linear(self.k, embedding_dim // 2, bias=False)  # Linear layer to project kNN distances to Embedding space
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (B, N, I) - node features
+        Returns:
+            feats: (B, N, E) - concatenated node and kNN embeddings
+        """
+        # Node Feature Embedding
+        node_emb = self.node_feature_encoder(x)  # [B, N, E // 2]
+
+        # Structural Embedding via kNN distances
+        # Compute pairwise distances & ignore self-distances
+        dists = torch.cdist(x, x)
+        dists.diagonal(dim1=1, dim2=2).fill_(float('inf'))
+        # Get k nearest neighbors & encode their distances
+        distances, _ = dists.topk(self.k, dim=2, largest=False)
+        k_nearest_emb = self.kNN_encoder(distances)  # [B, N, E // 2]
+
+        return torch.concat([node_emb, k_nearest_emb], dim=-1)  # [B, N, E]
+
+
+class StructuralEmbeddingNet(nn.Module):
+    def __init__(self, input_dim: int, embedding_dim: int):
+        """
+        Embedding Network for node features.
+        Performs node feature embedding and structural embedding.
+        Encodes the neighbors node embeddings scaled by their distances.
+        Args:
+            input_dim: Dimension of input node features (e.g., 2 for 2D coordinates)
+            embedding_dim: Dimension of the output embeddings (must be even)
+        """
+        super(StructuralEmbeddingNet, self).__init__()
+        assert embedding_dim % 2 == 0, "Embedding dimension must be even for structural embedding."
+
+        self.sub_emb = embedding_dim // 2
+        self.node_feature_encoder = nn.Linear(input_dim, self.sub_emb, bias=False)   # Linear layer for node feature embedding
+        self.neighbor_encoder = nn.Linear(self.sub_emb, self.sub_emb, bias=False)  # Linear layer to project weighted neighbor embeddings
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (B, N, I) - node features
+        Returns:
+            feats: (B, N, E) - concatenated node and structural embeddings
+        """
+        # Node Feature Embedding
+        node_emb = self.node_feature_encoder(x)  # [B, N, E // 2]
+
+        # Structural Embedding
+        # Compute pairwise distances, ignore self-distances and normalize
+        dists = torch.cdist(x, x)
+        dists.diagonal(dim1=1, dim2=2).fill_(float('inf'))
+        weights = F.softmax((1.0 / (dists + 1e-6)), dim=2)  # [B, N, N]
+        # Aggregate neighbor embeddings using weighted sum & project
+        neighbor_emb = self.neighbor_encoder(torch.bmm(weights, node_emb))  # [B, N, N] @ [B, N, E // 2] -> [B, N, E // 2]
+
+        return torch.concat([node_emb, neighbor_emb], dim=-1)  # [B, N, E]
 
 
 class MambaBlock(nn.Module):
@@ -274,10 +351,12 @@ class GumbelSinkhornDecoder(nn.Module):
 
     # ---- Sinkhorn normalization ----
     def sinkhorn(self, scores: torch.Tensor) -> torch.Tensor:
+        # pre-normalize for numerical stability
+        scores = scores - scores.max(dim=-1, keepdim=True)[0]
         for _ in range(self.gs_iters):
             scores = scores - torch.logsumexp(scores, dim=2, keepdim=True)  # row norm
             scores = scores - torch.logsumexp(scores, dim=1, keepdim=True)  # col norm
-        return torch.exp(scores)
+        return torch.softmax(scores, dim=-1)
     
     def forward(self, scores: torch.Tensor) -> torch.Tensor:
         """
