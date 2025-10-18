@@ -17,11 +17,13 @@ def get_options(args=None):
     
     # Model parameters
     ## Common
-    parser.add_argument('--tour_heuristic', type=str, default='greedy', help='Heuristic for initial tour construction (greedy, random, farthest)')
+    parser.add_argument('--initial_tours', type=str, default='polar', help='Heuristic for initial tour construction')
+    parser.add_argument('--baseline_tours', type=str, default='greedy', help='Heuristic for baseline tour construction')
     parser.add_argument('--dropout', type=float, default=0.0, help='dropout rate for regularization (0 = no dropout)')
     ## Embedding Network
     parser.add_argument('--input_dim', type=int, default=2, help='input dimension of the problem nodes')
-    parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of embeddings for each, NFE & CE, has to be even')
+    parser.add_argument('--embedding_dim', type=int, default=32, help='dimension of embeddings, has to be even')
+    parser.add_argument('--kNN_neighbors', type=int, default=8, help='number of nearest neighbors for structural embedding (k <= N & k <= embedding_dim)')
     parser.add_argument('--num_harmonics', type=int, default=32, help='number of harmonics for cyclic positional encoding (recommended: <= N/2)')
     parser.add_argument('--frequency_scaling', type=float, default=0.0, help='How the amplitude should decay for harmonics with larger frequencies (between 0 and 1)')
     ## Mamba Encoder
@@ -57,7 +59,7 @@ def get_options(args=None):
     parser.add_argument('--critic_lr', type=float, default=1e-3, help="initial learning rate for the critic network")
     parser.add_argument('--critic_lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
     parser.add_argument('--reward_scale', type=float, default=1.0, help='scaling factor for reward signal')
-    parser.add_argument('--loss_weight', type=float, default=0.5, help='weighting factor between hard and soft critic loss (0 = only hard, 1 = only soft)')
+    parser.add_argument('--lambda_mse_loss', type=float, default=0.2, help='factor to control the weight of the auxiliary MSE loss')
     parser.add_argument('--epsilon', type=float, default=0.1, help='epsilon value for epsilon-greedy exploration')
 
     # Inference and validation parameters

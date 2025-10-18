@@ -1,36 +1,35 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from model import components as mc
 
 
 class SinkhornPermutationActor(nn.Module):
-    def __init__(self, input_dim, embedding_dim, num_harmonics, frequency_scaling, mamba_hidden_dim, mamba_layers, 
+    def __init__(self, input_dim, embedding_dim, kNN_neighbors, mamba_hidden_dim, mamba_layers, 
                  num_attention_heads, ffn_expansion, initial_identity_bias, gs_tau, gs_iters, method, dropout):
-        super().__init__()
+        super(SinkhornPermutationActor, self).__init__()
 
         # Model components
-        self.encoder = mc.EmbeddingNet(
+        self.feature_embedder = mc.StructuralEmbeddingNet(
             input_dim = input_dim,
-            embedding_dim = embedding_dim,
-            num_harmonics = num_harmonics,
-            alpha = frequency_scaling
+            embedding_dim = embedding_dim
         )
-        self.embedding_norm = nn.LayerNorm(2 * embedding_dim)
-        self.model = mc.BidirectionalMambaEncoder(
-            mamba_model_size = 2 * embedding_dim,
+        self.embedding_norm = nn.LayerNorm(embedding_dim)
+        self.encoder = mc.BidirectionalMambaEncoder(
+            mamba_model_size = embedding_dim,
             mamba_hidden_state_size = mamba_hidden_dim,
             dropout = dropout,
             mamba_layers = mamba_layers
         )
-        self.mamba_norm = nn.LayerNorm(4 * embedding_dim)
+        self.encoder_norm = nn.LayerNorm(2 * embedding_dim)
         self.score_constructor = mc.AttentionScoreHead(
-            model_dim = 4 * embedding_dim,
+            model_dim = 2 * embedding_dim,
             num_heads = num_attention_heads,
             ffn_expansion = ffn_expansion,
             dropout = dropout
         )
-        self.identity_bias = nn.Parameter(torch.full((1,), initial_identity_bias))
+        self.identity_bias = nn.Parameter(torch.tensor(initial_identity_bias, dtype=torch.float32), requires_grad=True)
         self.decoder = mc.GumbelSinkhornDecoder(
             gs_tau = gs_tau,
             gs_iters = gs_iters
@@ -47,27 +46,23 @@ class SinkhornPermutationActor(nn.Module):
             st_perm: (B, N, N) - doubly stochastic matrix (soft permutation matrix)
             hard_perm: (B, N, N) - permutation matrix (hard assignment of the tour)
         """
-        # 1. Create Embeddings
-        node_embeddings, cyclic_embeddings = self.encoder(batch)  # (B, N, E), (B, N, E)
+        # 1. Create Embeddings & normalize
+        embeddings = self.feature_embedder(batch)  # (B, N, E)
+        embeddings = self.embedding_norm(embeddings)  # (B, N, E)
 
-        # 2. External Normalization and Concatenation: Prepare Input to Mamba
-        total_embeddings = self.embedding_norm(torch.cat([node_embeddings, cyclic_embeddings], dim=-1))
+        # 2. Encoder: Layered Mamba blocks with internal Pre-LN
+        encoded_features = self.encoder(embeddings)
+        encoded_features = self.encoder_norm(encoded_features)   # (B, N, 2E)
 
-        # 3. Mamba Workshop: Layered Mamba blocks with internal Pre-LN
-        mamba_feats = self.model(total_embeddings)   # (B, N, 2M)
-
-        # 4. External Normalization: Prepare Input to ScoreHead
-        norm_mamba_feats = self.mamba_norm(mamba_feats)   # (B, N, 2M)
-
-        # 5. Attention Workshop: Multi-Head Attention with FFN and internal Pre-LN and projection to scores
-        score_matrix = self.score_constructor(norm_mamba_feats)  # (B, N, N)
+        # 3. Score Construction: Multi-Head Attention with FFN and internal Pre-LN and projection to scores
+        score_matrix = self.score_constructor(encoded_features)  # (B, N, N)
+        score_matrix = F.layer_norm(score_matrix, score_matrix.shape[1:], eps=1e-5)
+        # Identity Bias to encourage near-identity initial permutations
         identity_matrix = torch.eye(score_matrix.size(1), device=score_matrix.device) * self.identity_bias
         biased_score_matrix = score_matrix + identity_matrix
 
-        # 6. Decoder Workshop 1: Use Gumbel-Sinkhorn to get soft permutation matrix (tour)
+        # 4. Decoder Workshop: Use Gumbel-Sinkhorn to get soft permutation matrix & hard assignment via tour construction
         soft_perm = self.decoder(biased_score_matrix)  # (B, N, N)
-
-        # 7. Decoder Workshop 2: Get the straight-through permutation matrix by hard assignment
         hard_perm = self.tour_constructor(soft_perm)
 
         return soft_perm, hard_perm

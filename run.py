@@ -2,7 +2,6 @@ import os
 import pprint
 import warnings
 import torch
-from torch import optim
 
 from problems.tsp import TSP
 from trainer.spg import SPGTrainer
@@ -24,6 +23,7 @@ def load_trainer(name):
     }.get(name, None)
     assert trainer is not None, "Currently unsupported trainer: {}!".format(name)
     return trainer
+
 
 def run(opts):
 
@@ -50,10 +50,10 @@ def run(opts):
     else:
         agent.start_training(problem)
 
+
 if __name__ == "__main__":
     
-    warnings.filterwarnings("ignore")
-    
+    warnings.filterwarnings("ignore")   
     os.environ['KMP_DUPLICATE_LIB_OK']='True'
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
