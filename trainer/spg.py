@@ -8,7 +8,7 @@ from tqdm import tqdm
 from model.actor_network import SinkhornPermutationActor
 from model.critic_network import Critic
 from trainer.memory import Memory
-from utils.utils import compute_euclidean_tour, get_initial_tours
+from utils.utils import compute_euclidean_tour, get_heuristic_tours
 from utils.logger import log_gradients
 
 
@@ -112,10 +112,7 @@ class SPGTrainer:
         # --- ON-POLICY: Collect Experience ---
         ## get observations (initial tours) through heuristic from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
-        observation = batch['coordinates']
-
-        baseline_tours = get_initial_tours(observation, self.opts.tour_heuristic)
-        baseline_cost = compute_euclidean_tour(baseline_tours)
+        observation = get_heuristic_tours(batch['coordinates'], self.opts.initial_tours)
 
         # Actor forward pass to generate discrete actions (tour permutations) and probabilistic actions (tour distributions)
         probs, action = self.actor(observation)
@@ -152,6 +149,10 @@ class SPGTrainer:
         # Loss calculation using actual cost & auxiliary term to align probabilistic actions with discrete actions
         actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), observation))
         actor_loss = torch.sum(actual_cost) + self.opts.lambda_mse_loss * F.mse_loss(probs, action.detach(), reduction='sum')
+
+        # Baseline calculation using a heuristic method for variance reduction and reference
+        baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
+        baseline_cost = compute_euclidean_tour(baseline_tours)
 
         # expected_cost = compute_euclidean_tour(torch.bmm(probs.transpose(1, 2), observation))
         # actor_loss = torch.sum((actual_cost + expected_cost) / 2.0) # calculate loss as mean of actual and expected cost and sum over batch
@@ -201,7 +202,7 @@ class SPGTrainer:
         # get observations (initial tours) through heuristic from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
         coords = batch['coordinates']
-        initial_tours = get_initial_tours(coords, self.opts.tour_heuristic)
+        initial_tours = get_heuristic_tours(coords, self.opts.tour_heuristic)
         initial_tour_lengths = compute_euclidean_tour(initial_tours)
 
         # Actor forward pass & tour construction & reward calculation

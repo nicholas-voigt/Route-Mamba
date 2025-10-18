@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from model.actor_network import ARPointerActor
 from model.critic_network import Critic
-from utils.utils import compute_euclidean_tour, get_initial_tours
+from utils.utils import compute_euclidean_tour, get_heuristic_tours
 from utils.logger import log_gradients
 
 
@@ -100,7 +100,7 @@ class ARTrainer:
         actor_tour_lengths = compute_euclidean_tour(torch.bmm(actions.transpose(1, 2), observation))  # (B,)
 
         # Calculate actor loss with baseline
-        baseline_tours = get_initial_tours(observation, self.opts.tour_heuristic)
+        baseline_tours = get_heuristic_tours(observation, self.opts.tour_heuristic)
         baseline_tour_lengths = compute_euclidean_tour(baseline_tours)
         advantage = baseline_tour_lengths - actor_tour_lengths
         actor_loss = -(advantage.detach() * log_prob_sums).mean()
@@ -150,7 +150,7 @@ class ARTrainer:
         # get observations (initial tours) through heuristic from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
         coords = batch['coordinates']
-        initial_tours = get_initial_tours(coords, self.opts.tour_heuristic)
+        initial_tours = get_heuristic_tours(coords, self.opts.tour_heuristic)
         initial_tour_lengths = compute_euclidean_tour(initial_tours)
 
         # Actor forward pass & tour construction & reward calculation

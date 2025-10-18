@@ -1,7 +1,7 @@
 import torch
 
 
-def greedy_initial_tour(batch: torch.Tensor):
+def greedy_nearest_neighbor_tour(batch: torch.Tensor):
     """
     Creates an initial tour for the TSP problem using a greedy nearest neighbor heuristic.
     Args:
@@ -33,7 +33,7 @@ def greedy_initial_tour(batch: torch.Tensor):
     # Reorder original coordinates based on the computed route
     return batch.gather(1, route.unsqueeze(-1).expand(-1, -1, 2))
 
-def farthest_initial_tour(batch: torch.Tensor):
+def greedy_farthest_neighbor_tour(batch: torch.Tensor):
     """
     Creates an initial tour for the TSP problem using a farthest neighbor heuristic.
     Args:
@@ -65,7 +65,7 @@ def farthest_initial_tour(batch: torch.Tensor):
     # Reorder original coordinates based on the computed route
     return batch.gather(1, route.unsqueeze(-1).expand(-1, -1, 2))
 
-def random_initial_tour(batch: torch.Tensor):
+def random_tour(batch: torch.Tensor):
     """
     Creates a random initial tour for the TSP problem.
     Args:
@@ -81,21 +81,40 @@ def random_initial_tour(batch: torch.Tensor):
     random_indices = random_values.argsort(dim=1)
     return batch.gather(1, random_indices.unsqueeze(-1).expand(-1, -1, 2))
 
-def get_initial_tours(batch: torch.Tensor, method: str):
+def polar_tour(batch: torch.Tensor):
     """
-    Generate initial tours for a batch of TSP instances.
+    Creates an initial tour for the TSP problem using polar coordinates sorting around the centroid.
     Args:
         batch: (B, N, 2) - coordinates of nodes
-        method: str - method to use for generating initial tours (greedy, random, farthest)
     Returns:
-        (B, N, 2) - initial tours
+        (B, N, 2) - nodes in polar sorted order
+    """
+    # Compute centroid for each instance and center the nodes
+    centroid = batch.mean(dim=1, keepdim=True)  # (B, 1, 2)
+    shifted_nodes = batch - centroid  # (B, N, 2)
+    # Compute angles & sort indices based on angles
+    angles = torch.atan2(shifted_nodes[:, :, 1], shifted_nodes[:, :, 0])  # (B, N)
+    polar_indices = angles.argsort(dim=1)
+    # Reorder original coordinates based on polar sorting
+    return batch.gather(1, polar_indices.unsqueeze(-1).expand(-1, -1, 2))
+
+def get_heuristic_tours(batch: torch.Tensor, method: str):
+    """
+    Generate tours for a batch of TSP instances using a specific heuristic.
+    Args:
+        batch: (B, N, 2) - coordinates of nodes
+        method: str - method to use for generating tours
+    Returns:
+        (B, N, 2) - the newly ordered nodes according to the heuristic
     """
     if method == "greedy":
-        return greedy_initial_tour(batch)
+        return greedy_nearest_neighbor_tour(batch)
     elif method == "random":
-        return random_initial_tour(batch)
+        return random_tour(batch)
     elif method == "farthest":
-        return farthest_initial_tour(batch)
+        return greedy_farthest_neighbor_tour(batch)
+    elif method == "polar":
+        return polar_tour(batch)
     else:
         raise ValueError(f"Unknown method: {method}")
 

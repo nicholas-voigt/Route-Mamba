@@ -17,7 +17,8 @@ def get_options(args=None):
     
     # Model parameters
     ## Common
-    parser.add_argument('--tour_heuristic', type=str, default='greedy', help='Heuristic for initial tour construction (greedy, random, farthest)')
+    parser.add_argument('--initial_tours', type=str, default='polar', help='Heuristic for initial tour construction')
+    parser.add_argument('--baseline_tours', type=str, default='greedy', help='Heuristic for baseline tour construction')
     parser.add_argument('--dropout', type=float, default=0.0, help='dropout rate for regularization (0 = no dropout)')
     ## Embedding Network
     parser.add_argument('--input_dim', type=int, default=2, help='input dimension of the problem nodes')

@@ -29,7 +29,7 @@ class SinkhornPermutationActor(nn.Module):
             ffn_expansion = ffn_expansion,
             dropout = dropout
         )
-        # self.identity_bias = nn.Parameter(torch.tensor(initial_identity_bias, dtype=torch.float32), requires_grad=True)
+        self.identity_bias = nn.Parameter(torch.tensor(initial_identity_bias, dtype=torch.float32), requires_grad=True)
         self.decoder = mc.GumbelSinkhornDecoder(
             gs_tau = gs_tau,
             gs_iters = gs_iters
@@ -58,11 +58,11 @@ class SinkhornPermutationActor(nn.Module):
         score_matrix = self.score_constructor(encoded_features)  # (B, N, N)
         score_matrix = F.layer_norm(score_matrix, score_matrix.shape[1:], eps=1e-5)
         # Identity Bias to encourage near-identity initial permutations
-        # identity_matrix = torch.eye(score_matrix.size(1), device=score_matrix.device) * self.identity_bias
-        # biased_score_matrix = score_matrix + identity_matrix
+        identity_matrix = torch.eye(score_matrix.size(1), device=score_matrix.device) * self.identity_bias
+        biased_score_matrix = score_matrix + identity_matrix
 
         # 4. Decoder Workshop: Use Gumbel-Sinkhorn to get soft permutation matrix & hard assignment via tour construction
-        soft_perm = self.decoder(score_matrix)  # (B, N, N)
+        soft_perm = self.decoder(biased_score_matrix)  # (B, N, N)
         hard_perm = self.tour_constructor(soft_perm)
 
         return soft_perm, hard_perm
