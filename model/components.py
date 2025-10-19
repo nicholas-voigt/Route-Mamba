@@ -356,7 +356,7 @@ class GumbelSinkhornDecoder(nn.Module):
         for _ in range(self.gs_iters):
             scores = scores - torch.logsumexp(scores, dim=2, keepdim=True)  # row norm
             scores = scores - torch.logsumexp(scores, dim=1, keepdim=True)  # col norm
-        return torch.softmax(scores, dim=-1)
+        return torch.exp(scores, dim=-1)
     
     def forward(self, scores: torch.Tensor) -> torch.Tensor:
         """
