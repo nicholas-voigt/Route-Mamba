@@ -42,31 +42,31 @@ class ARTrainer:
 
 
     def start_training(self, problem):
-        # prepare datasets
-        train_dataset = problem.make_dataset(
-            size=self.opts.graph_size, num_samples=self.opts.problem_size)
+        # prepare validation dataset
+        val_dataset = problem.make_dataset(
+            size=self.opts.graph_size, num_samples=self.opts.eval_size, filename=self.opts.val_dataset)
 
         # start training loop
         for epoch in range(self.opts.n_epochs):
+            # prepare training dataset
+            train_dataset = problem.make_dataset(size=self.opts.graph_size, num_samples=self.opts.problem_size)
+            training_dataloader = DataLoader(dataset=train_dataset, batch_size=self.opts.batch_size)
+
+            # Logging
             print(f"\nTraining Epoch {epoch}:")
             print(f"-  Actor Learning Rate: {self.actor_optimizer.param_groups[0]['lr']:.6f}")
 
             logger = {
-                'baseline_tour_length': [],
-                'actual_tour_length': [],
+                'baseline_cost': [],
+                'actual_cost': [],
                 'advantage': [],
                 'action_log_prob': [],
                 'actor_loss': []
             }
 
-            start_time = time.time()
-
             self.train()
-            training_dataloader = DataLoader(
-                dataset=train_dataset,
-                batch_size=self.opts.batch_size,
-            )
             self.gradient_check = True
+            start_time = time.time()
 
             for _, batch in enumerate(tqdm(training_dataloader, disable=self.opts.no_progress_bar)):
                 self.train_batch(batch, logger)
@@ -74,10 +74,10 @@ class ARTrainer:
             epoch_duration = time.time() - start_time
             print(f"Training Epoch {epoch} completed. Results:")
             print(f"-  Epoch Runtime: {epoch_duration:.2f}s")
-            print(f"-  Average Baseline Tour Length: {sum(logger['baseline_tour_length'])/len(logger['baseline_tour_length']):.4f}")
-            print(f"-  Average Actual Tour Length: {sum(logger['actual_tour_length'])/len(logger['actual_tour_length']):.4f}")
-            print(f"-  Average Advantage: {sum(logger['advantage'])/len(logger['advantage']):.4f}")
-            print(f"-  Average Action Log Probability: {sum(logger['action_log_prob'])/len(logger['action_log_prob']):.4f}")
+            print(f"-  Average Baseline Cost: {sum(logger['baseline_cost'])/len(logger['baseline_cost']):.4f}")
+            print(f"-  Average Actual Cost: {sum(logger['actual_cost'])/len(logger['actual_cost']):.4f}")
+            # print(f"-  Average Advantage: {sum(logger['advantage'])/len(logger['advantage']):.4f}")
+            # print(f"-  Average Action Log Probability: {sum(logger['action_log_prob'])/len(logger['action_log_prob']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
 
             # update learning rate
@@ -92,24 +92,29 @@ class ARTrainer:
 
         # get observations (initial tours) through heuristic from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
-        observation = batch['coordinates']
+        observation = get_heuristic_tours(batch['coordinates'], self.opts.initial_tours)
 
-        # Actor forward pass - TODO: Evaluate if epsilon-greedy 2-opt exploration is beneficial
-        actions, prob_dist = self.actor(observation)
-        log_prob_sums = (torch.log(prob_dist + 1e-9) * actions.detach()).sum(dim=(1, 2))  # (B,)
-        actor_tour_lengths = compute_euclidean_tour(torch.bmm(actions.transpose(1, 2), observation))  # (B,)
+        # Actor forward pass
+        probs, actions = self.actor(observation)
 
-        # Calculate actor loss with baseline
-        baseline_tours = get_heuristic_tours(observation, self.opts.tour_heuristic)
-        baseline_tour_lengths = compute_euclidean_tour(baseline_tours)
-        advantage = baseline_tour_lengths - actor_tour_lengths
-        actor_loss = -(advantage.detach() * log_prob_sums).mean()
+        # TODO: Evaluate if epsilon-greedy 2-opt exploration is beneficial
+
+        # Loss calculation using actual cost & auxiliary term to align probabilistic actions with discrete actions
+        # TODO: Does this make sense? Its not Sinkhorn after all...
+        actual_cost = compute_euclidean_tour(torch.bmm(actions.transpose(1, 2), observation))
+        actor_loss = torch.sum(actual_cost) + self.opts.lambda_mse_loss * F.mse_loss(probs, actions.detach(), reduction='sum')
+
+        # log_prob_sums = (torch.log(probs + 1e-9) * actions.detach()).sum(dim=(1, 2))  # (B,)
+
+        # Baseline calculation using a heuristic method for variance reduction and reference
+        baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
+        baseline_cost = compute_euclidean_tour(baseline_tours)
 
         # Logging
-        logger['baseline_tour_length'].append(baseline_tour_lengths.mean().item())
-        logger['actual_tour_length'].append(actor_tour_lengths.mean().item())
-        logger['advantage'].append(advantage.mean().item())
-        logger['action_log_prob'].append(log_prob_sums.mean().item())
+        logger['baseline_cost'].append(baseline_cost.mean().item())
+        logger['actual_cost'].append(actual_cost.mean().item())
+        # logger['advantage'].append(advantage.mean().item())
+        # logger['action_log_prob'].append(log_prob_sums.mean().item())
         logger['actor_loss'].append(actor_loss.item())
 
         # Update actor network
