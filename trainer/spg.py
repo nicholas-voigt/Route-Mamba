@@ -114,7 +114,7 @@ class SPGTrainer:
         observation = get_heuristic_tours(batch['coordinates'], self.opts.initial_tours)
 
         # Actor forward pass to generate discrete actions (tour permutations) and probabilistic actions (tour distributions)
-        probs, action = self.actor(observation)
+        log_probs, action = self.actor(observation)
 
         ## Epsilon-greedy exploration - perform swap in 2-opt-style to the current tour
         if self.opts.epsilon > 0:
@@ -129,7 +129,7 @@ class SPGTrainer:
 
                 # Clone the action and probs tensors to avoid in-place operations on the original tensors
                 action = action.clone()
-                probs = probs.clone()
+                log_probs = log_probs.clone()
 
                 # select two random nodes for each selected problem in the batch
                 swap_nodes = torch.multinomial(torch.ones(P, N, device=device), num_samples=2, replacement=False)
@@ -140,14 +140,14 @@ class SPGTrainer:
                 action[batch_idxs, :, i] = actions_j
                 action[batch_idxs, :, j] = actions_i
 
-                probs_i = probs[batch_idxs, :, i].clone()
-                probs_j = probs[batch_idxs, :, j].clone()
-                probs[batch_idxs, :, i] = probs_j
-                probs[batch_idxs, :, j] = probs_i
+                probs_i = log_probs[batch_idxs, :, i].clone()
+                probs_j = log_probs[batch_idxs, :, j].clone()
+                log_probs[batch_idxs, :, i] = probs_j
+                log_probs[batch_idxs, :, j] = probs_i
 
         # Loss calculation using actual cost & auxiliary term to align probabilistic actions with discrete actions
         actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), observation))
-        actor_loss = torch.sum(actual_cost) + self.opts.lambda_mse_loss * F.mse_loss(probs, action.detach(), reduction='sum')
+        actor_loss = torch.sum(actual_cost) + self.opts.lambda_mse_loss * -torch.sum(log_probs * action.detach())
 
         # Baseline calculation using a heuristic method for variance reduction and reference
         baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)

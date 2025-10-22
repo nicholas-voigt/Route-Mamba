@@ -356,7 +356,7 @@ class GumbelSinkhornDecoder(nn.Module):
         for _ in range(self.gs_iters):
             scores = F.log_softmax(scores, dim=2)  # row norm
             scores = F.log_softmax(scores, dim=1)  # col norm
-        return torch.exp(scores)
+        return scores
     
     def forward(self, scores: torch.Tensor) -> torch.Tensor:
         """
@@ -364,14 +364,12 @@ class GumbelSinkhornDecoder(nn.Module):
         Args:
             score matrix [B, N, N] - should be in logit space (unbounded)
         Returns:
-            soft permutation matrix [B, N, N]
+            soft permutation matrix [B, N, N] - in log space (doubly stochastic), rows = nodes (i), cols = positions (j)
         """
         # Add Gumbel noise
         gumbel_noise = self.sample_gumbel(scores.shape, 1e-20, scores.device)
         scores = (scores + gumbel_noise) / self.gs_tau
-        # Sinkhorn normalization to get doubly stochastic matrix
-        soft_perm = self.sinkhorn(scores)
-        return soft_perm
+        return self.sinkhorn(scores)
 
 
 class TourConstructor(nn.Module):
