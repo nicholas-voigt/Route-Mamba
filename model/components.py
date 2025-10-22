@@ -354,8 +354,8 @@ class GumbelSinkhornDecoder(nn.Module):
         # pre-normalize for numerical stability
         scores = scores - scores.max(dim=-1, keepdim=True)[0]
         for _ in range(self.gs_iters):
-            scores = scores - torch.logsumexp(scores, dim=2, keepdim=True)  # row norm
-            scores = scores - torch.logsumexp(scores, dim=1, keepdim=True)  # col norm
+            scores = F.log_softmax(scores, dim=2)  # row norm
+            scores = F.log_softmax(scores, dim=1)  # col norm
         return torch.exp(scores)
     
     def forward(self, scores: torch.Tensor) -> torch.Tensor:
