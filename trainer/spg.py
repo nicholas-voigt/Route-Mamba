@@ -97,7 +97,7 @@ class SPGTrainer:
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
 
             # update learning rate and sinkhorn temperature
-            self.actor.decoder.gs_tau *= self.opts.sinkhorn_tau_decay
+            self.actor.decoder.gs_tau = max(self.actor.decoder.gs_tau * self.opts.sinkhorn_tau_decay, 1.0)
             self.actor_scheduler.step()
 
             if (self.opts.checkpoint_epochs != 0 and epoch % self.opts.checkpoint_epochs == 0) or epoch == self.opts.n_epochs - 1:
