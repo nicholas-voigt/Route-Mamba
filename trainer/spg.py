@@ -116,6 +116,7 @@ class SPGTrainer:
             print(f"-  Average Actual Cost: {sum(logger['actual_cost'])/len(logger['actual_cost']):.4f}")
             print(f"-  Average Entropy: {sum(logger['entropy'])/len(logger['entropy']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
+            print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
 
             # update learning rate and sinkhorn temperature
             self.actor.decoder.gs_tau = max(self.actor.decoder.gs_tau * self.opts.sinkhorn_tau_decay, 1.0)
@@ -181,9 +182,12 @@ class SPGTrainer:
         self.critic_optimizer.step()
 
         # Calculate actor loss using REINFORCE with critic baseline
+        # Reinforce loss using log probabilities of the sampled actions & normalized advantage above critic
         log_likelihood = -torch.sum(log_probs * action, dim=(1, 2))
         advantage = (actual_cost - estimated_cost).detach()
+        advantage = (advantage - advantage.mean()) / (advantage.std(unbiased=False) + 1e-8)
         reinforce_loss = (advantage * log_likelihood).mean()
+        # Entropy regularization to encourage exploration
         entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=(1, 2)).mean()
         actor_loss = reinforce_loss - self.opts.lambda_auxiliary_loss * entropy
 
