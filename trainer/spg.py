@@ -179,6 +179,8 @@ class SPGTrainer:
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
+        if self.gradient_check:
+            log_gradients(self.critic)
         self.critic_optimizer.step()
 
         # Calculate actor loss using REINFORCE with critic baseline
