@@ -77,7 +77,7 @@ class SPGTrainer:
             logger = {
                 'baseline_cost': [],
                 'actual_cost': [],
-                'expected_cost': [],
+                'entropy': [],
                 'actor_loss': []
             }
 
@@ -94,6 +94,7 @@ class SPGTrainer:
             print(f"-  Epoch Runtime: {epoch_duration:.2f}s")
             print(f"-  Average Baseline Cost: {sum(logger['baseline_cost'])/len(logger['baseline_cost']):.4f}")
             print(f"-  Average Actual Cost: {sum(logger['actual_cost'])/len(logger['actual_cost']):.4f}")
+            print(f"-  Average Entropy: {sum(logger['entropy'])/len(logger['entropy']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
 
             # update learning rate and sinkhorn temperature
@@ -161,6 +162,7 @@ class SPGTrainer:
         # Logging
         logger['baseline_cost'].append(baseline_cost.mean().item())
         logger['actual_cost'].append(actual_cost.mean().item())
+        logger['entropy'].append(entropy.item())
         logger['actor_loss'].append(actor_loss.item())
 
         # Actor Update
