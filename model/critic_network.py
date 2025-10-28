@@ -1,22 +1,21 @@
 import torch
 import torch.nn as nn
 
-from model.components import KNNEmbeddingNet, BidirectionalMambaEncoder, MLP
+from model import components as mc
 
 
 class Critic(nn.Module):
-    def __init__(self, input_dim, embedding_dim, kNN_neighbors, mamba_hidden_dim, mamba_layers,
+    def __init__(self, input_dim, embedding_dim, mamba_hidden_dim, mamba_layers,
                  dropout, mlp_ff_dim, mlp_embedding_dim):
         super(Critic, self).__init__()
 
         # State Encoder
-        self.state_embedder = KNNEmbeddingNet(
+        self.state_embedder = mc.StructuralEmbeddingNet(
             input_dim = input_dim,
-            embedding_dim = embedding_dim,
-            k = kNN_neighbors
+            embedding_dim = embedding_dim
         )
         self.state_embedding_norm = nn.LayerNorm(embedding_dim)
-        self.state_encoder = BidirectionalMambaEncoder(
+        self.state_encoder = mc.BidirectionalMambaEncoder(
             mamba_model_size = embedding_dim,
             mamba_hidden_state_size = mamba_hidden_dim,
             dropout = dropout,
@@ -25,7 +24,7 @@ class Critic(nn.Module):
         self.state_encoder_norm = nn.LayerNorm(2 * embedding_dim)
 
         # Value Decoder
-        self.value_decoder = MLP(
+        self.value_decoder = mc.MLP(
             input_dim = 2 * embedding_dim,
             feed_forward_dim = mlp_ff_dim,
             embedding_dim = mlp_embedding_dim,
@@ -33,12 +32,11 @@ class Critic(nn.Module):
             output_dim = 1
         )
 
-    def forward(self, state, action):
+    def forward(self, state):
         """
         Forward pass of the Critic network.
         Args:
             state: Tensor of shape (B, N, 2) representing the coordinates of the nodes.
-            action: Tensor of shape (B, N, N) representing the permutation matrix of the action. rows = nodes, cols = positions in tour.
         Returns:
             value: Tensor of shape (B, 1) representing the estimated Q-value for the (state, action) pair.
         """
@@ -49,10 +47,7 @@ class Critic(nn.Module):
         state_encoding = self.state_encoder(state_embedding)  # (B, N, 2E)
         state_encoding = self.state_encoder_norm(state_encoding)  # (B, N, 2E)
 
-        # Fuse State and Action
-        expected_tours = torch.bmm(action.transpose(1, 2), state_encoding)  # (B, N, 2E)
-
         # Decode Q-Value
-        q = self.value_decoder(expected_tours.mean(dim=1))  # (B, 1)
+        q = self.value_decoder(state_encoding.mean(dim=1))  # (B, 1)
         return q
 
