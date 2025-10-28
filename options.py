@@ -59,7 +59,7 @@ def get_options(args=None):
     parser.add_argument('--critic_lr', type=float, default=1e-3, help="initial learning rate for the critic network")
     parser.add_argument('--critic_lr_decay', type=float, default=0.995, help='exponential learning rate decay per epoch')
     parser.add_argument('--reward_scale', type=float, default=1.0, help='scaling factor for reward signal')
-    parser.add_argument('--lambda_mse_loss', type=float, default=0.2, help='factor to control the weight of the auxiliary MSE loss')
+    parser.add_argument('--lambda_auxiliary_loss', type=float, default=0.2, help='factor to control the weight of the auxiliary loss')
     parser.add_argument('--epsilon', type=float, default=0.1, help='epsilon value for epsilon-greedy exploration')
 
     # Inference and validation parameters

@@ -153,11 +153,10 @@ class SPGTrainer:
 
         # Calculate actor loss using REINFORCE with baseline
         log_likelihood = -torch.sum(log_probs * action, dim=(1, 2))
-        # advantage = (actual_cost - baseline_cost).detach()
-        # reinforce_loss = (advantage * log_likelihood).mean()
-        # nll_loss = -log_likelihood.mean()
-        # actor_loss = reinforce_loss + self.opts.lambda_mse_loss * nll_loss
-        actor_loss = (actual_cost * log_likelihood).mean()
+        advantage = (actual_cost - baseline_cost).detach()
+        reinforce_loss = (advantage * log_likelihood).mean()
+        entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=(1, 2)).mean()
+        actor_loss = reinforce_loss - self.opts.lambda_auxiliary_loss * entropy
 
         # Logging
         logger['baseline_cost'].append(baseline_cost.mean().item())
