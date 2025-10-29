@@ -184,14 +184,14 @@ class SPGTrainer:
         self.critic_optimizer.step()
 
         # Calculate actor loss using REINFORCE with critic baseline
-        # Reinforce loss using log probabilities of the sampled actions & normalized advantage above critic
+        # Reinforce loss using log probabilities of the sampled actions & relative advantage above critic
         log_likelihood = -torch.sum(log_probs * action, dim=(1, 2))
-        advantage = (actual_cost - estimated_cost).detach()
-        advantage = (advantage - advantage.mean()) / (advantage.std(unbiased=False) + 1e-8)
-        reinforce_loss = (advantage * log_likelihood).mean()
+        advantage = ((actual_cost - estimated_cost) / estimated_cost).detach()
+        # advantage = (advantage - advantage.mean()) / (advantage.std(unbiased=False) + 1e-8)
+        actor_loss = (advantage * log_likelihood).mean()
         # Entropy regularization to encourage exploration
-        entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=(1, 2)).mean()
-        actor_loss = reinforce_loss - self.opts.lambda_auxiliary_loss * entropy
+        # entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=(1, 2)).mean()
+        # actor_loss = reinforce_loss - self.opts.lambda_auxiliary_loss * entropy
 
         # # Baseline calculation using a heuristic method for reference
         # reference_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
@@ -200,7 +200,7 @@ class SPGTrainer:
         # Logging
         logger['critic_cost'].append(estimated_cost.mean().item())
         logger['actual_cost'].append(actual_cost.mean().item())
-        logger['entropy'].append(entropy.item())
+        # logger['entropy'].append(entropy.item())
         logger['actor_loss'].append(actor_loss.item())
         logger['critic_loss'].append(critic_loss.item())
 
