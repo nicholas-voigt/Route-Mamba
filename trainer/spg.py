@@ -215,7 +215,7 @@ class SPGTrainer:
         
         # Actor loss using REINFORCE with critic baseline
         log_likelihood = -torch.sum(log_probs * action, dim=(1, 2))
-        advantage = ((actual_cost - estimated_cost) / estimated_cost).detach()
+        advantage = ((actual_cost - estimated_cost) / estimated_cost).detach() * self.opts.reward_scale  # Apply reward scaling
         actor_loss = (advantage * log_likelihood).mean()
         # Entropy regularization to encourage exploration (optional)
         entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=(1, 2)).mean()
