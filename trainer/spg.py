@@ -190,7 +190,7 @@ class SPGTrainer:
         # advantage = (advantage - advantage.mean()) / (advantage.std(unbiased=False) + 1e-8)
         actor_loss = (advantage * log_likelihood).mean()
         # Entropy regularization to encourage exploration
-        # entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=(1, 2)).mean()
+        entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=(1, 2)).mean()
         # actor_loss = reinforce_loss - self.opts.lambda_auxiliary_loss * entropy
 
         # # Baseline calculation using a heuristic method for reference
@@ -200,7 +200,7 @@ class SPGTrainer:
         # Logging
         logger['critic_cost'].append(estimated_cost.mean().item())
         logger['actual_cost'].append(actual_cost.mean().item())
-        # logger['entropy'].append(entropy.item())
+        logger['entropy'].append(entropy.item())
         logger['actor_loss'].append(actor_loss.item())
         logger['critic_loss'].append(critic_loss.item())
 
