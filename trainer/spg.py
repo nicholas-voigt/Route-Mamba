@@ -69,7 +69,8 @@ class SPGTrainer:
 
 
     def start_training(self, problem):
-
+        self.gradient_check = False
+        
         # --- Critic Warm-up Phase ---
         if self.opts.critic_warmup_epochs > 0:
             print(f"\nCritic Warm-up for {self.opts.critic_warmup_epochs} epochs ---")
