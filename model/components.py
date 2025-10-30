@@ -364,7 +364,7 @@ class GumbelSinkhornDecoder(nn.Module):
         Args:
             score matrix [B, N, N] - should be in logit space (unbounded)
         Returns:
-            soft permutation matrix [B, N, N] - in log space (doubly stochastic), rows = nodes (i), cols = positions (j)
+            soft permutation matrix [B, N, N] - log-space representation of a doubly stochastic matrix (i.e., log of a doubly stochastic matrix), rows = nodes (i), cols = positions (j)
         """
         # Add Gumbel noise
         gumbel_noise = self.sample_gumbel(scores.shape, 1e-20, scores.device)
