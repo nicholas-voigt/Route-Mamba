@@ -61,4 +61,4 @@ pip3 install -q --no-cache-dir torch torchvision torchaudio --index-url https://
 
 # Submit your job to the cluster
 
-srun --gres=gpu:1 python trainer.ppo_paper.py
+srun --gres=gpu:1 python trainer/ppo_paper.py
