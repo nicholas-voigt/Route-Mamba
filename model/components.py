@@ -524,6 +524,7 @@ class ARPointerDecoder(nn.Module):
             batch_indices = torch.arange(B, device=device)
             tour_matrix[batch_indices, next_node_idx, t] = 1.0
             log_prob_matrix[:, :, t] = log_probs_t
+            mask = mask.clone()
             mask[batch_indices, next_node_idx] = True
 
             # Update nodes for next iteration
