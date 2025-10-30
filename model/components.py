@@ -506,10 +506,10 @@ class ARPointerDecoder(nn.Module):
         # Create starting state
         first_node_emb = torch.zeros_like(graph_emb)  # (B, 1, E)
         prev_node_emb = torch.zeros_like(graph_emb)  # (B, 1, E)
-        state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1).unsqueeze(1)  # (B, 1, context_dim)
 
         # --- Autoregressive Decoding Loop ---
         for t in range(N):
+            state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1).unsqueeze(1)  # (B, 1, context_dim)
             query = self.query_projection(state).squeeze(1)  # (B, context_dim)
 
             # Calculate attention scores (logits) by pointing & mask out already visited nodes
@@ -526,10 +526,9 @@ class ARPointerDecoder(nn.Module):
             log_prob_matrix[:, :, t] = log_probs_t
             mask[batch_indices, next_node_idx] = True
 
-            # Update state for next iteration
+            # Update nodes for next iteration
             prev_node_emb = node_emb[batch_indices, next_node_idx, :]
             if t == 0: first_node_emb = prev_node_emb
-            state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1).unsqueeze(1)  # (B, 1, context_dim)
 
         return log_prob_matrix, tour_matrix
 
