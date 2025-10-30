@@ -488,7 +488,7 @@ class ARPointerDecoder(nn.Module):
             graph_emb: (B, 2E) - graph embedding
             node_emb: (B, N, 2E) - node embeddings
         Returns:
-            probs: (B, N, N) - probability distribution over the tours
+            log_probs: (B, N, N) - log-probability distribution over the tours
             tour: (B, N, N) - permutation matrix representing the actual tour
         """
         B, N, _ = node_emb.shape
@@ -497,44 +497,41 @@ class ARPointerDecoder(nn.Module):
 
         # Initialize tour, mask for visited nodes, and probabilities
         tour_matrix = torch.zeros(B, N, N, dtype=torch.float32, device=device)
-        prob_matrix = torch.zeros(B, N, N, dtype=torch.float32, device=device)
+        log_prob_matrix = torch.zeros(B, N, N, dtype=torch.float32, device=device)
         mask = torch.zeros(B, N, dtype=torch.bool, device=device)
         
         # Pre-compute keys for all nodes for efficiency
         keys = self.key_projection(node_emb) # (B, N, context_dim)
 
-        # --- Decoding Step 0: Start at the first node ---
-        # The first node is fixed, we don't sample it (for now).
-        first_node_emb = node_emb[:, 0, :]
-        prev_node_emb = first_node_emb
-
-        tour_matrix[:, 0, 0] = 1.0
-        prob_matrix[:, 0, 0] = 1.0
-        mask[:, 0] = True
+        # Create starting state
+        first_node_emb = torch.zeros_like(graph_emb)  # (B, 1, E)
+        prev_node_emb = torch.zeros_like(graph_emb)  # (B, 1, E)
+        state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1)  # (B, context_dim)
 
         # --- Autoregressive Decoding Loop ---
-        for t in range(1, N):
-            # Form query using MambaBlock
-            query_context = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1).unsqueeze(1)  # (B, 1, context_dim)
-            query = self.query_projection(query_context).squeeze(1)  # (B, context_dim)
+        for t in range(N):
+            query = self.query_projection(state).squeeze(1)  # (B, context_dim)
 
             # Calculate attention scores (logits) by pointing & mask out already visited nodes
             logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
             logits = logits.masked_fill(mask, NEG)  # Mask out visited nodes
 
-            # Get probability distribution over next nodes & sample
-            probs_t = F.softmax(logits, dim=-1)
-            next_node_idx = torch.multinomial(probs_t, num_samples=1).squeeze(-1)  # (B,)
+            # Get log-probability distribution over next nodes & sample
+            log_probs_t = F.log_softmax(logits, dim=-1)
+            next_node_idx = torch.multinomial(torch.exp(log_probs_t), num_samples=1).squeeze(-1)  # (B,)
 
-            # Store results and update state
+            # Store results
             batch_indices = torch.arange(B, device=device)
             tour_matrix[batch_indices, next_node_idx, t] = 1.0
-            prob_matrix[:, :, t] = probs_t
-            prev_node_emb = node_emb[batch_indices, next_node_idx, :]
-            mask = mask.clone()
+            log_prob_matrix[:, :, t] = log_probs_t
             mask[batch_indices, next_node_idx] = True
 
-        return prob_matrix, tour_matrix
+            # Update state for next iteration
+            prev_node_emb = node_emb[batch_indices, next_node_idx, :]
+            if t == 0: first_node_emb = prev_node_emb
+            state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1)  # (B, context_dim)
+
+        return log_prob_matrix, tour_matrix
 
 
 class ConvolutionBlock(nn.Module):
