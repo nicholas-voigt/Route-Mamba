@@ -218,7 +218,7 @@ class SPGTrainer:
         advantage = ((actual_cost - estimated_cost) / estimated_cost).detach() * self.opts.reward_scale  # Apply reward scaling
         actor_loss = (advantage * log_likelihood).mean()
         # Entropy regularization to encourage exploration (optional)
-        entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=(1, 2)).mean()
+        entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=2).sum(dim=1).mean()
         # actor_loss = reinforce_loss - self.opts.lambda_auxiliary_loss * entropy
 
         # Logging
