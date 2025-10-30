@@ -529,7 +529,7 @@ class ARPointerDecoder(nn.Module):
             # Update state for next iteration
             prev_node_emb = node_emb[batch_indices, next_node_idx, :]
             if t == 0: first_node_emb = prev_node_emb
-            state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1)  # (B, context_dim)
+            state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1).unsqueeze(1)  # (B, 1, context_dim)
 
         return log_prob_matrix, tour_matrix
 
