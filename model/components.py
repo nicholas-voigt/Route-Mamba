@@ -506,7 +506,7 @@ class ARPointerDecoder(nn.Module):
         # Create starting state
         first_node_emb = torch.zeros_like(graph_emb)  # (B, 1, E)
         prev_node_emb = torch.zeros_like(graph_emb)  # (B, 1, E)
-        state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1)  # (B, context_dim)
+        state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1).unsqueeze(1)  # (B, 1, context_dim)
 
         # --- Autoregressive Decoding Loop ---
         for t in range(N):
