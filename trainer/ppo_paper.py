@@ -236,17 +236,17 @@ class MambaActorCriticNetwork(nn.Module):
 
 
 class StabilizedMambaTSP:
-    def __init__(self, num_cities, hidden_size=256):
+    def __init__(self, num_cities, model_size, hidden_size, layers):
         self.num_cities = num_cities
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        input_size = num_cities * 2 + num_cities + 3
+        input_size = 4 # [x, y, visited, current]
         
         self.model = MambaActorCriticNetwork(
             input_size=input_size,
-            model_size=128,
+            model_size=model_size,
             hidden_size=hidden_size,
-            layers=2,
+            layers=layers,
             output_size=num_cities
         ).to(self.device)
 
@@ -461,7 +461,7 @@ if __name__ == "__main__":
     
     # Initialize environment and agent
     env = TSPEnvironment(num_cities=20)
-    agent = StabilizedMambaTSP(num_cities=20)
+    agent = StabilizedMambaTSP(num_cities=20, model_size=128, hidden_size=256, layers=2)
     
     # Training
     print("Starting training...")
