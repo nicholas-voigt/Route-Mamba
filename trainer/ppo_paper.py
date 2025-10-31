@@ -215,7 +215,7 @@ class MambaActorCriticNetwork(nn.Module):
         self.norm = nn.LayerNorm(model_size)
 
         # Actor Head (Policy) - outputs one logit per city
-        self.actor_head = nn.Linear(model_size, output_size)
+        self.actor_head = nn.Linear(model_size, 1)
 
         # Critic Head (Value) - Aggregates and outputs one value for the whole state
         self.critic_head = nn.Sequential(
@@ -229,9 +229,11 @@ class MambaActorCriticNetwork(nn.Module):
         x = self.input_proj(state)
         x = self.mamba(x)
         x = self.norm(x)
-        # Actor Head (Policy) and Critic Head (Value)
-        action_logits = self.actor_head(x)
-        state_value = self.critic_head(x)
+        # Actor Head (Policy)
+        action_logits = self.actor_head(x).squeeze(-1) # Shape: (B, N)
+        # Critic Head (Value)
+        aggregated_state = x.mean(dim=1) # Shape: (B, model_size)
+        state_value = self.critic_head(aggregated_state).squeeze(-1) # Shape: (B,)
         return action_logits, state_value
 
 
@@ -440,12 +442,11 @@ def train(env, agent, num_episodes=10000, eval_interval=500):
 
             # Save best model
             torch.save({
-                'actor_state_dict': agent.actor.state_dict(),
-                'critic_state_dict': agent.critic.state_dict(),
+                'model_state_dict': agent.model.state_dict(),
                 'best_distance': best_distance,
             }, 'best_tsp_model.pth')
-        
-        # Update learning rates
+
+        # Step the learning rate scheduler
         agent.scheduler.step()
         
         if episode % eval_interval == 0:
@@ -473,7 +474,7 @@ if __name__ == "__main__":
     
     # Random baseline comparison
     print("\n===== Random Baseline =====")
-    random_agent = StabilizedMambaTSP(num_cities=20)
+    random_agent = StabilizedMambaTSP(num_cities=20, model_size=128, hidden_size=256, layers=2)
     rand_avg, rand_best, rand_time = evaluate(env, random_agent)
     
     # Print final comparison
