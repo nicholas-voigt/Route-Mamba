@@ -98,8 +98,8 @@ class ARPointerActor(nn.Module):
         Args:
             batch: (B, N, I) - node features with 2D coordinates
         Returns:
-            prob_dist: (B, N, N) - probability distribution over next nodes at each step
-            tour: (B, N, N) - permutation matrix representing the tour
+            logits: (B, N) - log probability of chosen nodes at each step
+            tours: (B, N) - node indices representing the tour
         """
         # 1. Create Embeddings & normalize
         embeddings = self.feature_embedder(batch)  # (B, N, E)
@@ -111,6 +111,6 @@ class ARPointerActor(nn.Module):
         encoded_graph = encoded_features.mean(dim=1)  # (B, 2E)
 
         # 3. Decoding Workshop: Autoregressive Pointer Network
-        prob_dist, hard_perm = self.decoder(encoded_graph, encoded_features)  # (B, N, N), (B, N, N)
+        logits, tours = self.decoder(encoded_graph, encoded_features)  # (B, N, N), (B, N, N)
 
-        return prob_dist, hard_perm
+        return logits, tours

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions import Categorical
 from scipy.optimize import linear_sum_assignment
 import math
 from mamba_ssm import Mamba
@@ -496,8 +497,8 @@ class ARPointerDecoder(nn.Module):
         NEG = torch.finfo(node_emb.dtype).min
 
         # Initialize tour, mask for visited nodes, and probabilities
-        tour_matrix = torch.zeros(B, N, N, dtype=torch.float32, device=device)
-        log_prob_matrix = torch.zeros(B, N, N, dtype=torch.float32, device=device)
+        tours = torch.zeros(B, N, dtype=torch.uint8, device=device)
+        log_probs = torch.zeros(B, N, dtype=torch.float32, device=device)
         mask = torch.zeros(B, N, dtype=torch.bool, device=device)
         
         # Pre-compute keys for all nodes for efficiency
@@ -516,22 +517,25 @@ class ARPointerDecoder(nn.Module):
             logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
             logits = logits.masked_fill(mask, NEG)  # Mask out visited nodes
 
-            # Get log-probability distribution over next nodes & sample
-            log_probs_t = F.log_softmax(logits, dim=-1)
-            next_node_idx = torch.multinomial(torch.exp(log_probs_t), num_samples=1).squeeze(-1)  # (B,)
+            # Get probability distribution over next nodes & sample
+            probs = F.softmax(logits, dim=-1)
+            dist = Categorical(probs)
+            next_node_idx = dist.sample()  # (B,)
+
+            log_prob_dist = F.log_softmax(logits, dim=-1)
+            log_prob_t = log_prob_dist.gather(1, next_node_idx.unsqueeze(1)).squeeze(1)  # (B,)
 
             # Store results
+            mask = torch.scatter(mask, 1, next_node_idx.unsqueeze(1), True)
             batch_indices = torch.arange(B, device=device)
-            tour_matrix[batch_indices, next_node_idx, t] = 1.0
-            log_prob_matrix[:, :, t] = log_probs_t
-            mask = mask.clone()
-            mask[batch_indices, next_node_idx] = True
+            tours[batch_indices, t] = next_node_idx
+            log_probs[batch_indices, t] = log_prob_t
 
             # Update nodes for next iteration
             prev_node_emb = node_emb[batch_indices, next_node_idx, :]
             if t == 0: first_node_emb = prev_node_emb
 
-        return log_prob_matrix, tour_matrix
+        return log_probs, tours
 
 
 class ConvolutionBlock(nn.Module):
