@@ -153,7 +153,7 @@ class ARTrainer:
         actual_cost = compute_euclidean_tour(torch.bmm(tour_matrix.transpose(1, 2), observation))
 
         # Using greedy baseline
-        baseline_tours = get_heuristic_tours(batch['coordinates'], self.opts.tour_heuristic)
+        baseline_tours = get_heuristic_tours(batch['coordinates'], self.opts.baseline_tours)
         estimated_cost = compute_euclidean_tour(baseline_tours)
 
         # # Critic value estimation  & loss calculation using MSE loss
