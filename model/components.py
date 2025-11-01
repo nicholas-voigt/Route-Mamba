@@ -497,7 +497,7 @@ class ARPointerDecoder(nn.Module):
         NEG = torch.finfo(node_emb.dtype).min
 
         # Initialize tour, mask for visited nodes, and probabilities
-        tours = torch.zeros(B, N, dtype=torch.uint8, device=device)
+        tours = torch.zeros(B, N, dtype=torch.long, device=device)
         log_probs = torch.zeros(B, N, dtype=torch.float32, device=device)
         mask = torch.zeros(B, N, dtype=torch.bool, device=device)
         
