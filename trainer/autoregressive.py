@@ -188,8 +188,8 @@ class ARTrainer:
         # Logging
         logger['actual_cost'].append(actual_cost.mean().item())
         logger['actor_loss'].append(actor_loss.item())
-        logger['advantage'] = advantage.mean().item()
-        logger['log_likelihood'] = log_likelihood.mean().item()
+        logger['advantage'].append(advantage.mean().item())
+        logger['log_likelihood'].append(log_likelihood.mean().item())
 
         # Actor Update
         self.actor_optimizer.zero_grad()
