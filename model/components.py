@@ -482,15 +482,16 @@ class ARPointerDecoder(nn.Module):
         )
         self.key_projection = nn.Linear(embedding_dim, context_dim, bias=key_proj_bias)  # project node embeddings for key/value
 
-    def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass for the autoregressive pointer decoder.
         Args:
             graph_emb: (B, 2E) - graph embedding
             node_emb: (B, N, 2E) - node embeddings
         Returns:
-            log_probs: (B, N, N) - log-probability distribution over the tours
-            tour: (B, N, N) - permutation matrix representing the actual tour
+            tour: (B, N) - tensor of node indices representing the tour
+            log_probs: (B, N) - log-probability of each selected node at each step
+            entropies: (B, N) - entropy of the probability distribution at each step
         """
         B, N, _ = node_emb.shape
         device = node_emb.device
@@ -499,6 +500,7 @@ class ARPointerDecoder(nn.Module):
         # Initialize tour, mask for visited nodes, and probabilities
         tours = torch.zeros(B, N, dtype=torch.long, device=device)
         log_probs = torch.zeros(B, N, dtype=torch.float32, device=device)
+        entropies = torch.zeros(B, N, dtype=torch.float32, device=device)
         mask = torch.zeros(B, N, dtype=torch.bool, device=device)
         
         # Pre-compute keys for all nodes for efficiency
@@ -517,12 +519,16 @@ class ARPointerDecoder(nn.Module):
             logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
             logits = logits.masked_fill(mask, NEG)  # Mask out visited nodes
 
-            # Get probability distribution over next nodes & sample
+            # Get probability & log-probability distribution over next nodes
             probs = F.softmax(logits, dim=-1)
+            log_prob_dist = F.log_softmax(logits, dim=-1)
+
+            # Calculate entropy
+            entropy_t = -(log_prob_dist * probs).sum(dim=1).mean()
+
+            # Sample next node from the distributions
             dist = Categorical(probs)
             next_node_idx = dist.sample()  # (B,)
-
-            log_prob_dist = F.log_softmax(logits, dim=-1)
             log_prob_t = log_prob_dist.gather(1, next_node_idx.unsqueeze(1)).squeeze(1)  # (B,)
 
             # Store results
@@ -530,12 +536,13 @@ class ARPointerDecoder(nn.Module):
             batch_indices = torch.arange(B, device=device)
             tours[batch_indices, t] = next_node_idx
             log_probs[batch_indices, t] = log_prob_t
+            entropies[batch_indices, t] = entropy_t
 
             # Update nodes for next iteration
             prev_node_emb = node_emb[batch_indices, next_node_idx, :]
             if t == 0: first_node_emb = prev_node_emb
 
-        return log_probs, tours
+        return tours, log_probs, entropies
 
 
 class ConvolutionBlock(nn.Module):
