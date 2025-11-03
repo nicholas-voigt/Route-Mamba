@@ -1,12 +1,49 @@
 import torch
+from torch import nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import time
 from tqdm import tqdm
 
-from model.actor_network import ARPointerActor
+import components as mc
 from utils.utils import compute_euclidean_tour, get_heuristic_tours
 from utils.logger import log_gradients
+
+
+class Actor(nn.Module):
+    def __init__(self, input_dim, embed_dim, mamba_hidden_dim, mamba_layers, dropout):
+        super().__init__()
+
+        # Model components
+        self.feature_embedder = mc.StructuralEmbeddingNet(
+            input_dim = input_dim,
+            embedding_dim = embed_dim
+        )
+        self.embedding_norm = nn.LayerNorm(embed_dim)
+        self.decoder = mc.ARPointerDecoder(
+            embedding_dim = embed_dim,
+            mamba_hidden_dim = mamba_hidden_dim,
+            key_proj_bias = False,
+            dropout = dropout
+        )
+
+    def forward(self, batch):
+        """
+        Args:
+            batch: (B, N, I) - node features with 2D coordinates
+        Returns:
+            tours: (B, N) - node indices representing the tour
+            logits: (B, N) - log probability of chosen nodes at each step
+            entropies: (B, N) - entropy of the probability distribution at each step
+        """
+        # 1. Encoder: Encode Input & normalize
+        node_embed = self.feature_embedder(batch)  # (B, N, E)
+        node_embed = self.embedding_norm(node_embed)  # (B, N, E)
+        graph_embed = node_embed.mean(dim=1)  # (B, E)
+
+        # 2. Decoding Workshop: Autoregressive Pointer Network
+        tours, logits, entropies = self.decoder(graph_embed, node_embed)  # (B, N), (B, N), (B, N)
+        return tours, logits, entropies
 
 
 class ARTrainer:
@@ -18,9 +55,9 @@ class ARTrainer:
             print(f"Loading actor model from {opts.actor_load_path}")
             self.actor = torch.load(opts.actor_load_path, map_location=opts.device)
         else:
-            self.actor = ARPointerActor(
+            self.actor = Actor(
                 input_dim = opts.input_dim,
-                embedding_dim = opts.embedding_dim,
+                embed_dim = opts.embedding_dim,
                 mamba_hidden_dim = opts.mamba_hidden_dim,
                 mamba_layers = opts.mamba_layers,
                 dropout = opts.dropout

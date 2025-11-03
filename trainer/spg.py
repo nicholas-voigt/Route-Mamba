@@ -1,15 +1,125 @@
 import torch
+from torch import nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import time
 from tqdm import tqdm
 
-from model.actor_network import SinkhornPermutationActor
-from model.critic_network import Critic
-from trainer.memory import Memory
+import components as mc
 from utils.utils import compute_euclidean_tour, get_heuristic_tours
 from utils.logger import log_gradients
+
+
+class Actor(nn.Module):
+    def __init__(self, input_dim, embedding_dim, mamba_hidden_dim, mamba_layers, 
+                 num_attention_heads, ffn_expansion, initial_identity_bias, gs_tau, gs_iters, method, dropout):
+        super(Actor, self).__init__()
+
+        # Model components
+        self.feature_embedder = mc.StructuralEmbeddingNet(
+            input_dim = input_dim,
+            embedding_dim = embedding_dim
+        )
+        self.embedding_norm = nn.LayerNorm(embedding_dim)
+        self.encoder = mc.BidirectionalMambaEncoder(
+            mamba_model_size = embedding_dim,
+            mamba_hidden_state_size = mamba_hidden_dim,
+            dropout = dropout,
+            mamba_layers = mamba_layers
+        )
+        self.encoder_norm = nn.LayerNorm(2 * embedding_dim)
+        self.score_constructor = mc.AttentionScoreHead(
+            model_dim = 2 * embedding_dim,
+            num_heads = num_attention_heads,
+            ffn_expansion = ffn_expansion,
+            dropout = dropout
+        )
+        self.identity_bias = nn.Parameter(torch.tensor(initial_identity_bias, dtype=torch.float32), requires_grad=True)
+        self.decoder = mc.GumbelSinkhornDecoder(
+            gs_tau = gs_tau,
+            gs_iters = gs_iters
+        )
+        self.tour_constructor = mc.TourConstructor(
+            method = method
+        )
+
+    def forward(self, batch):
+        """
+        Args:
+            batch: (B, N, I) - node features with 2D coordinates
+        Returns:
+            st_perm: (B, N, N) - doubly stochastic matrix (soft permutation matrix)
+            hard_perm: (B, N, N) - permutation matrix (hard assignment of the tour)
+        """
+        # 1. Create Embeddings & normalize
+        embeddings = self.feature_embedder(batch)  # (B, N, E)
+        embeddings = self.embedding_norm(embeddings)  # (B, N, E)
+
+        # 2. Encoder: Layered Mamba blocks with internal Pre-LN
+        encoded_features = self.encoder(embeddings)
+        encoded_features = self.encoder_norm(encoded_features)   # (B, N, 2E)
+
+        # 3. Score Construction: Multi-Head Attention with FFN and internal Pre-LN and projection to scores
+        score_matrix = self.score_constructor(encoded_features)  # (B, N, N)
+        score_matrix = F.layer_norm(score_matrix, score_matrix.shape[1:], eps=1e-5)
+        # Identity Bias to encourage near-identity initial permutations
+        identity_matrix = torch.eye(score_matrix.size(1), device=score_matrix.device) * self.identity_bias
+        biased_score_matrix = score_matrix + identity_matrix
+
+        # 4. Decoder Workshop: Use Gumbel-Sinkhorn to get soft permutation matrix & hard assignment via tour construction
+        soft_perm = self.decoder(biased_score_matrix)  # (B, N, N)
+        hard_perm = self.tour_constructor(soft_perm)
+
+        return soft_perm, hard_perm
+
+
+class Critic(nn.Module):
+    def __init__(self, input_dim, embedding_dim, mamba_hidden_dim, mamba_layers,
+                 dropout, mlp_ff_dim, mlp_embedding_dim):
+        super(Critic, self).__init__()
+
+        # State Encoder
+        self.state_embedder = mc.StructuralEmbeddingNet(
+            input_dim = input_dim,
+            embedding_dim = embedding_dim
+        )
+        self.state_embedding_norm = nn.LayerNorm(embedding_dim)
+        self.state_encoder = mc.BidirectionalMambaEncoder(
+            mamba_model_size = embedding_dim,
+            mamba_hidden_state_size = mamba_hidden_dim,
+            dropout = dropout,
+            mamba_layers = mamba_layers
+        )
+        self.state_encoder_norm = nn.LayerNorm(2 * embedding_dim)
+
+        # Value Decoder
+        self.value_decoder = mc.MLP(
+            input_dim = 2 * embedding_dim,
+            feed_forward_dim = mlp_ff_dim,
+            embedding_dim = mlp_embedding_dim,
+            dropout = dropout,
+            output_dim = 1
+        )
+
+    def forward(self, state):
+        """
+        Forward pass of the Critic network.
+        Args:
+            state: Tensor of shape (B, N, 2) representing the coordinates of the nodes.
+        Returns:
+            value: Tensor of shape (B, 1) representing the estimated Q-value for the (state, action) pair.
+        """
+        # Encode the State
+        state_embedding = self.state_embedder(state)  # (B, N, E)
+        state_embedding = self.state_embedding_norm(state_embedding) # (B, N, E)
+
+        state_encoding = self.state_encoder(state_embedding)  # (B, N, 2E)
+        state_encoding = self.state_encoder_norm(state_encoding)  # (B, N, 2E)
+
+        # Decode Q-Value
+        q = self.value_decoder(state_encoding.mean(dim=1))  # (B, 1)
+        return q
 
 
 class SPGTrainer:
@@ -21,10 +131,9 @@ class SPGTrainer:
             print(f"Loading actor model from {opts.actor_load_path}")
             self.actor = torch.load(opts.actor_load_path, map_location=opts.device)
         else:
-            self.actor = SinkhornPermutationActor(
+            self.actor = Actor(
                 input_dim = opts.input_dim,
                 embedding_dim = opts.embedding_dim,
-                kNN_neighbors = opts.kNN_neighbors,
                 mamba_hidden_dim = opts.mamba_hidden_dim,
                 mamba_layers = opts.mamba_layers,
                 num_attention_heads = opts.num_attention_heads,
