@@ -2,61 +2,65 @@ import torch
 
 
 class Memory:
-    def __init__(self, limit: int, action_shape: tuple, observation_shape: tuple, device: torch.device):
+    def __init__(self, limit: int, obs_shape: tuple, action_shape: tuple, reward_shape: tuple, device: torch.device):
         """
         A vectorized, efficient replay buffer that lives on the GPU. It stores experiences and allows for random sampling of batches.
         Buffer stores observations, discrete actions, dense actions, and rewards.
         Args:
             limit: int - maximum number of experiences to store in the buffer
-            action_shape: tuple - shape of the action space
-            observation_shape: tuple - shape of the observation space
+            obs_shape: tuple - shape of the observation space
+            action_shape: tuple - shape of the action space (also used for log_probs)
+            reward_shape: tuple - shape of the reward space
             device: torch.device - device to store the buffer on (e.g., 'cuda' or 'cpu')
         """
         self.limit = limit
         self.device = device
 
         # Pre-allocate memory on the target device
-        self.observations = torch.zeros((limit, *observation_shape), device=self.device, dtype=torch.float32)
-        self.discrete_actions = torch.zeros((limit, *action_shape), device=self.device, dtype=torch.float32)
-        self.dense_actions = torch.zeros((limit, *action_shape), device=self.device, dtype=torch.float32)
-        self.rewards = torch.zeros((limit, 1), device=self.device, dtype=torch.float32)
+        self.observations = torch.zeros((limit, *obs_shape), device=self.device, dtype=torch.float32)
+        self.actions = torch.zeros((limit, *action_shape), device=self.device, dtype=torch.float32)
+        self.log_probs = torch.zeros((limit, *action_shape), device=self.device, dtype=torch.float32)
+        self.rewards = torch.zeros((limit, *reward_shape), device=self.device, dtype=torch.float32)
         
         self.position = 0
         self.size = 0
 
-    def append(self, observations: torch.Tensor, discrete_actions: torch.Tensor, dense_actions: torch.Tensor, rewards: torch.Tensor):
+
+    def append(self, obs: torch.Tensor, actions: torch.Tensor, log_probs: torch.Tensor, rewards: torch.Tensor):
         """
         Appends a batch of experiences to the buffer in a vectorized manner.
         """
-        batch_size = observations.shape[0]
+        batch_size = obs.shape[0]
         
         # Generate indices for insertion using modulo arithmetic
         indices = torch.arange(self.position, self.position + batch_size, device=self.device) % self.limit
         
         # Vectorized assignment - one large operation per tensor
-        self.observations[indices] = observations
-        self.discrete_actions[indices] = discrete_actions
-        self.dense_actions[indices] = dense_actions
-        self.rewards[indices] = rewards.unsqueeze(1) # Ensure rewards is (B, 1)
+        self.observations[indices] = obs
+        self.actions[indices] = actions
+        self.log_probs[indices] = log_probs
+        self.rewards[indices] = rewards
         
         # Update position and size
         self.position = (self.position + batch_size) % self.limit
         self.size = min(self.size + batch_size, self.limit)
 
+
     def sample(self, batch_size: int):
         """
         Samples a random batch of experiences from the buffer.
-        All operations are performed on the GPU.
+        All operations are performed on the specified device.
         """
-        # Generate random indices directly on the GPU
+        # Generate random indices
         batch_idxs = torch.randint(0, self.size, (batch_size,), device=self.device)
         
-        obs_batch = self.observations[batch_idxs]
-        discrete_actions_batch = self.discrete_actions[batch_idxs]
-        dense_actions_batch = self.dense_actions[batch_idxs]
-        reward_batch = self.rewards[batch_idxs]
+        obs = self.observations[batch_idxs]
+        actions = self.actions[batch_idxs]
+        log_probs = self.log_probs[batch_idxs]
+        rewards = self.rewards[batch_idxs]
         
-        return obs_batch, discrete_actions_batch, dense_actions_batch, reward_batch
+        return obs, actions, log_probs, rewards
+
 
     def __len__(self):
         return self.size
@@ -72,25 +76,25 @@ if __name__ == '__main__':
         device = torch.device('cuda')
 
     # Initialize memory on the correct device
-    memory = Memory(limit=100000, action_shape=(10, 10), observation_shape=(10, 2), device=device)
+    memory = Memory(limit=100000, obs_shape=(10, 2), action_shape=(10,), reward_shape=(1,), device=device)
 
     # Create sample data on the correct device
-    batch_size = 128
+    batch_size = 64
     states = torch.randn(batch_size, 10, 2, device=device)
-    discrete_actions = torch.ones(batch_size, 10, 10, device=device, dtype=torch.bool)
-    dense_actions = torch.rand(batch_size, 10, 10, device=device)
-    rewards = torch.randn(batch_size, device=device)
+    discrete_actions = torch.ones(batch_size, 10, device=device)
+    log_probabilities = torch.rand(batch_size, 10, device=device)
+    rewards = torch.randn(batch_size, 1, device=device)
     
     # Append data
-    memory.append(states, discrete_actions, dense_actions, rewards)
+    memory.append(states, discrete_actions, log_probabilities, rewards)
     print(f"Appended {batch_size} items. Buffer size: {len(memory)}")
     
     # Sample data
     sample_size = 32
-    s_batch, psi_batch, a_batch, r_batch = memory.sample(sample_size)
+    sampled_obs, sampled_actions, sampled_logprobs, sampled_rewards = memory.sample(sample_size)
     
     print(f"\nSampled a batch of {sample_size}:")
-    print(f"  States shape: {s_batch.shape}, Device: {s_batch.device}")
-    print(f"  Discrete Actions shape: {psi_batch.shape}, Device: {psi_batch.device}")
-    print(f"  Dense Actions shape: {a_batch.shape}, Device: {a_batch.device}")
-    print(f"  Rewards shape: {r_batch.shape}, Device: {r_batch.device}")
+    print(f"  States shape: {sampled_obs.shape}, Device: {sampled_obs.device}")
+    print(f"  Discrete Actions shape: {sampled_actions.shape}, Device: {sampled_actions.device}")
+    print(f"  Dense Actions shape: {sampled_logprobs.shape}, Device: {sampled_logprobs.device}")
+    print(f"  Rewards shape: {sampled_rewards.shape}, Device: {sampled_rewards.device}")
