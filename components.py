@@ -482,12 +482,13 @@ class ARPointerDecoder(nn.Module):
         )
         self.key_projection = nn.Linear(embedding_dim, context_dim, bias=key_proj_bias)  # project node embeddings for key/value
 
-    def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass for the autoregressive pointer decoder.
         Args:
             graph_emb: (B, 2E) - graph embedding
             node_emb: (B, N, 2E) - node embeddings
+            actions: (B, N) - previously taken actions (for training)
         Returns:
             tour: (B, N) - tensor of node indices representing the tour
             log_probs: (B, N) - log-probability of each selected node at each step
@@ -496,6 +497,7 @@ class ARPointerDecoder(nn.Module):
         B, N, _ = node_emb.shape
         device = node_emb.device
         NEG = torch.finfo(node_emb.dtype).min
+        batch_indices = torch.arange(B, device=device)
 
         # Initialize tour, mask for visited nodes, and probabilities
         tours = torch.zeros(B, N, dtype=torch.long, device=device)
@@ -524,16 +526,21 @@ class ARPointerDecoder(nn.Module):
             log_prob_dist = F.log_softmax(logits, dim=-1)
 
             # Calculate entropy
-            entropy_t = -(log_prob_dist * probs).sum(dim=1).mean()
+            entropy_t = -(log_prob_dist * probs).sum(dim=1)
 
-            # Sample next node from the distributions
-            dist = Categorical(probs)
-            next_node_idx = dist.sample()  # (B,)
+            if actions is None:
+                # Sample next node from the distributions
+                dist = Categorical(probs)
+                next_node_idx = dist.sample()  # (B,)
+            else:
+                # Use provided actions (teacher forcing)
+                next_node_idx = actions[:, t]  # (B,)
+
+            # Get log-probability of the selected node
             log_prob_t = log_prob_dist.gather(1, next_node_idx.unsqueeze(1)).squeeze(1)  # (B,)
 
             # Store results
             mask = torch.scatter(mask, 1, next_node_idx.unsqueeze(1), True)
-            batch_indices = torch.arange(B, device=device)
             tours[batch_indices, t] = next_node_idx
             log_probs[batch_indices, t] = log_prob_t
             entropies[batch_indices, t] = entropy_t
