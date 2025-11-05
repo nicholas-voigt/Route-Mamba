@@ -247,7 +247,7 @@ class ARPPOTrainer:
             print(f"-  Average Tour Cost: {sum(logger['tour_cost'])/len(logger['tour_cost']):.4f}")
             print(f"-  Average Critic Cost: {sum(logger['critic_cost'])/len(logger['critic_cost']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
-            print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
+            # print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
             print(f"-  Average Advantage: {sum(logger['advantage'])/len(logger['advantage']):.4f}")
             print(f"-  Average Policy Ratios: {sum(logger['ratios'])/len(logger['ratios']):.4f}")
             print(f"-  Average Entropy: {sum(logger['entropy'])/len(logger['entropy']):.4f}")
@@ -271,13 +271,16 @@ class ARPPOTrainer:
 
         # Actor forward pass
         with torch.no_grad():
-            action, log_probs, _, values = self.model(observation)
+            action, log_probs, _ = self.model.get_actions(observation)
             tours = torch.gather(observation, 1, action.unsqueeze(-1).expand(-1, -1, observation.size(-1)))  # (B, N, 2)
             actor_cost = compute_euclidean_tour(tours)
 
+            # Heuristic baseline instead of learned critic
+            baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
+            values = compute_euclidean_tour(baseline_tours)
+
             # Store "old" policy
             old_lp_sum = torch.sum(log_probs, dim=1).detach()
-            old_values = values.detach()
 
         # --- 2. Calculate Advantage with GAE ---
         # Normalized advantage over critic estimation
@@ -290,7 +293,7 @@ class ARPPOTrainer:
         # --- 3. PPO Update (multiple epochs over collected data) ---
         for _ in range(4):
             # Re-evaluate actions with current policy
-            _, new_log_probs, entropy, new_values = self.model(observation, actions=action)
+            _, new_log_probs, entropy = self.model.get_actions(observation, actions=action)
             new_lp_sum = torch.sum(new_log_probs, dim=1)  # (B,)
 
             # Calculate ratio & clipped surrogate objective
@@ -301,15 +304,15 @@ class ARPPOTrainer:
             actor_loss = torch.max(actor_unclipped, actor_clipped).mean()
 
             # Critic loss (MSE)
-            critic_unclipped = F.mse_loss(new_values, actor_cost.detach())
-            critic_clipped = F.mse_loss(
-                old_values + torch.clamp(new_values - old_values, -clip_param, clip_param), 
-                actor_cost.detach()
-            )
-            critic_loss = torch.max(critic_unclipped, critic_clipped)
+            # critic_unclipped = F.mse_loss(new_values, actor_cost.detach())
+            # critic_clipped = F.mse_loss(
+            #     old_values + torch.clamp(new_values - old_values, -clip_param, clip_param), 
+            #     actor_cost.detach()
+            # )
+            # critic_loss = torch.max(critic_unclipped, critic_clipped)
 
             # Total loss
-            total_loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy.sum(dim=1).mean()
+            total_loss = actor_loss - 0.01 * entropy.sum(dim=1).mean()
 
             # Backpropagation
             self.optimizer.zero_grad()
@@ -325,7 +328,7 @@ class ARPPOTrainer:
                 clip_fraction = ((ratios - 1.0).abs() > clip_param).float().mean()
             
             logger['actor_loss'].append(actor_loss.item())
-            logger['critic_loss'].append(critic_loss.item())
+            # logger['critic_loss'].append(critic_loss.item())
             logger['advantage'].append(advantage.mean().item())
             logger['ratios'].append(ratios.mean().item())
             logger['entropy'].append(entropy.mean().item())
