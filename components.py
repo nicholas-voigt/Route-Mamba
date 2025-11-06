@@ -390,7 +390,7 @@ class TourConstructor(nn.Module):
         Converts a soft permutation matrix to a hard one by sampling.
         Creates a categorical distribution for each position (column).
         Args:
-            soft_perm: (tensor: B, N, N) soft permutation matrix - rows = nodes, cols = positions
+            soft_perm: (tensor: B, N, N) soft permutation matrix in log-space - rows = nodes, cols = positions
         Returns:
             (tensor: B, N, N) hard permutation matrix
         """

@@ -58,11 +58,10 @@ class PolicyDecoder(nn.Module):
         # normalize matrix using Sinkhorn operator to get doubly stochastic matrix
         logits = torch.bmm(keys, queries.transpose(1, 2))  # (B, N, C) @ (B, C, N) -> (B, N, N)
         norm_logits = self.sinkhorn_decoder(logits)
-        norm_probs = torch.exp(norm_logits)  # Convert log-probs to probs 
         
         if actions is None:
             # Construct tour by sampling from the normalized logits
-            tour_perms = self.tour_constructor(norm_probs)
+            tour_perms = self.tour_constructor(norm_logits)
             tours = tour_perms.argmax(dim=1).long()  # (B, N)
         else:
             # Use provided actions to reconstruct tour (for teacher forcing during training)
@@ -73,7 +72,8 @@ class PolicyDecoder(nn.Module):
             tours = actions  # (B, N)
 
         log_probs = torch.sum(norm_logits * tour_perms, dim=(1, 2))  # (B,)
-        entropies = -torch.sum(norm_logits * norm_probs, dim=(1, 2))  # (B,)
+        probs = torch.exp(norm_logits)
+        entropies = -torch.sum(norm_logits * probs, dim=(1, 2))  # (B,)
 
         # # Logging for debugging
         # logits_print = logits.detach().cpu()
