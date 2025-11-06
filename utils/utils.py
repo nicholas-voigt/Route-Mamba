@@ -127,16 +127,22 @@ def check_feasibility(observation, solution):
     Raises:
         AssertionError if any tour is infeasible.
     """
-    # Sort both tensors along the node dimension for comparison
-    # We sort by x-coordinate first, then y-coordinate (lexicographic sort)
-    sol_sorted = solution[solution[:, :, 0].argsort(dim=1)]
-    sol_sorted = sol_sorted[sol_sorted[:, :, 1].argsort(dim=1, stable=True)]
+    B, N, _ = observation.size()
+    # Flatten to (B, N*2) for easier sorting
+    obs_flat = observation.reshape(B, N * 2)
+    sol_flat = solution.reshape(B, N * 2)
+    obs_sorted, _ = obs_flat.sort(dim=1)
+    sol_sorted, _ = sol_flat.sort(dim=1)
     
-    obs_sorted = observation[observation[:, :, 0].argsort(dim=1)]
-    obs_sorted = obs_sorted[obs_sorted[:, :, 1].argsort(dim=1, stable=True)]
-
-    assert torch.allclose(obs_sorted, sol_sorted, rtol=1e-5, atol=1e-6), f"Solution nodes do not match observation nodes: \n{obs_sorted}\n vs \n{sol_sorted}\n"
-    
+    if not torch.allclose(obs_sorted, sol_sorted, rtol=1e-5, atol=1e-6):
+        # Find failing batches
+        for b in range(B):
+            if not torch.allclose(obs_sorted[b], sol_sorted[b], rtol=1e-5, atol=1e-6):
+                print(f"\n❌ Batch {b} FAILED feasibility check!")
+                print(f"Observation:\n{observation[b]}")
+                print(f"Solution:\n{solution[b]}")
+        
+        raise AssertionError("Solution nodes do not match observation nodes!")    
 def compute_euclidean_tour(tour):
     """
     Compute the tour length using euclidean with x & y coordinates
