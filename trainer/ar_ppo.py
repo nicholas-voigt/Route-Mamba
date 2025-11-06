@@ -11,91 +11,64 @@ from utils.utils import compute_euclidean_tour, get_heuristic_tours
 from utils.logger import log_gradients
 
 
-# class ARDecoder(nn.Module):
-#     def __init__(self, embedding_dim: int, mamba_hidden_dim: int, key_proj_bias: bool, dropout: float):
-#         """
-#         Autoregressive Pointer Decoder for TSP.
-#         Takes node embeddings and graph embeddings as input and produces a tour iteratively (autoregressive).
-#         Uses Mamba for context encoding and query formulation and Transformer-style attention for pointing.
-#         Args:
-#             embedding_dim: Dimension of the input embeddings for one node
-#             mamba_hidden_dim: Hidden state size for Mamba
-#             key_proj_bias: Bias for key projection layer
-#             dropout: Dropout rate for regularization
-#         """
-#         super(ARDecoder, self).__init__()
-#         context_dim = 3 * embedding_dim  # graph embedding + 2 node embeddings
-#         self.query_projection = nn.Linear(context_dim, context_dim)  # project context to query
-#         self.key_projection = nn.Linear(embedding_dim, context_dim, bias=key_proj_bias)  # project node embeddings for key/value
+class PolicyDecoder(nn.Module):
+    def __init__(self, embed_dim: int, context_dim: int, mamba_hidden_dim: int, key_proj_bias: bool, dropout: float, gs_tau: float, gs_iters: int):
+        """
+        Decoder for TSP in autoregressive style but faster with mamba scan.
+        Takes node embeddings and graph embeddings as input and produces a tour.
+        Uses Mamba for context encoding and query formulation and Transformer-style attention for pointing.
+        Args:
+            embedding_dim: Dimension of the input embeddings for one node
+            mamba_hidden_dim: Hidden state size for Mamba
+            key_proj_bias: Bias for key projection layer
+            dropout: Dropout rate for regularization
+        """
+        super(PolicyDecoder, self).__init__()
+        self.key_projection = nn.Linear(embed_dim, context_dim, bias=key_proj_bias)
+        self.query_projection = mc.MambaBlock(
+            mamba_model_size = context_dim,
+            mamba_hidden_state_size = mamba_hidden_dim,
+            dropout = dropout
+        )
+        self.sinkhorn_decoder = mc.GumbelSinkhornDecoder(
+            gs_tau = gs_tau,
+            gs_iters = gs_iters
+        )
 
-#     def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-#         """
-#         Forward pass for the autoregressive pointer decoder.
-#         Args:
-#             graph_emb: (B, 2E) - graph embedding
-#             node_emb: (B, N, 2E) - node embeddings
-#             actions: (B, N) - previously taken actions (for training)
-#         Returns:
-#             tour: (B, N) - tensor of node indices representing the tour
-#             log_probs: (B, N) - log-probability of each selected node at each step
-#             entropies: (B, N) - entropy of the probability distribution at each step
-#         """
-#         B, N, _ = node_emb.shape
-#         device = node_emb.device
-#         NEG = torch.finfo(node_emb.dtype).min
-#         batch_indices = torch.arange(B, device=device)
+    def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass for the autoregressive pointer decoder.
+        Args:
+            graph_emb: (B, 2E) - graph embedding
+            node_emb: (B, N, E) - node embeddings (for key projection)
+            actions: (B, N) - previously taken actions (for training)
+        Returns:
+            tour: (B, N) - tensor of node indices representing the tour
+            log_probs: (B, N) - log-probability of each selected node at each step
+            entropies: (B, N) - entropy of the probability distribution at each step
+        """
+        B, N, _ = node_emb.shape
+        device = node_emb.device
+        NEG = torch.finfo(node_emb.dtype).min
+        batch_indices = torch.arange(B, device=device)
 
-#         # Initialize tour, mask for visited nodes, and probabilities
-#         tours = torch.zeros(B, N, dtype=torch.long, device=device)
-#         log_probs = torch.zeros(B, N, dtype=torch.float32, device=device)
-#         entropies = torch.zeros(B, N, dtype=torch.float32, device=device)
-#         mask = torch.zeros(B, N, dtype=torch.bool, device=device)
+        # Tour construction:
+        # Project node embeddings to keys & concatenated graph and node embeddings to queries
+        keys = self.key_projection(node_emb) # (B, N, C)
+        queries = self.query_projection(torch.cat([graph_emb.unsqueeze(1).expand(-1, N, -1), node_emb], dim=-1))  # (B, N, C)
+
+        # Calculate attention scores (logits) for all nodes in one go & 
+        # normalize matrix using Sinkhorn operator to get doubly stochastic matrix
+        logits = torch.bmm(keys, queries.transpose(1, 2))  # (B, N, C) @ (B, C, N) -> (B, N, N)
+        norm_logits = self.sinkhorn_decoder(logits)
         
-#         # Pre-compute keys for all nodes for efficiency
-#         keys = self.key_projection(node_emb) # (B, N, context_dim)
+        # Construct tour by sampling from the normalized logits
+        tour_perms = mc.TourConstructor(method='sampled')(norm_logits)
+        tours = tour_perms.argmax(dim=-1)  # (B, N)
+        log_probs = torch.gather(norm_logits, 2, tour_perms).squeeze(-1)  # (B, N)
+        entropies = -torch.sum(norm_logits * torch.exp(norm_logits), dim=-1)  # (B, N)
 
-#         # Create starting state
-#         first_node_emb = torch.zeros_like(graph_emb)  # (B, 1, E)
-#         prev_node_emb = torch.zeros_like(graph_emb)  # (B, 1, E)
-
-#         # --- Autoregressive Decoding Loop ---
-#         for t in range(N):
-#             state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1)  # (B, context_dim)
-#             query = self.query_projection(state)  # (B, context_dim)
-
-#             # Calculate attention scores (logits) by pointing & mask out already visited nodes
-#             logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
-#             logits = logits.masked_fill(mask, NEG)  # Mask out visited nodes
-
-#             # Get probability & log-probability distribution over next nodes
-#             probs = F.softmax(logits, dim=-1)
-#             log_prob_dist = F.log_softmax(logits, dim=-1)
-
-#             # Calculate entropy
-#             entropy_t = -(log_prob_dist * probs).sum(dim=1)
-
-#             if actions is None:
-#                 # Sample next node from the distributions
-#                 dist = Categorical(probs)
-#                 next_node_idx = dist.sample()  # (B,)
-#             else:
-#                 # Use provided actions (teacher forcing)
-#                 next_node_idx = actions[:, t]  # (B,)
-
-#             # Get log-probability of the selected node
-#             log_prob_t = log_prob_dist.gather(1, next_node_idx.unsqueeze(1)).squeeze(1)  # (B,)
-
-#             # Store results
-#             mask = torch.scatter(mask, 1, next_node_idx.unsqueeze(1), True)
-#             tours[batch_indices, t] = next_node_idx
-#             log_probs[batch_indices, t] = log_prob_t
-#             entropies[batch_indices, t] = entropy_t
-
-#             # Update nodes for next iteration
-#             prev_node_emb = node_emb[batch_indices, next_node_idx, :]
-#             if t == 0: first_node_emb = prev_node_emb
-
-#         return tours, log_probs, entropies
+        return tours, log_probs, entropies
 
 
 class ActorCritic(nn.Module):
@@ -108,11 +81,14 @@ class ActorCritic(nn.Module):
             embedding_dim = embed_dim
         )
         self.embedding_norm = nn.LayerNorm(embed_dim)
-        self.policy_decoder = mc.ARPointerDecoder(
-            embedding_dim = embed_dim,
+        self.policy_head = PolicyDecoder(
+            embed_dim = embed_dim,
+            context_dim = 2 * embed_dim,
             mamba_hidden_dim = mamba_hidden_dim,
             key_proj_bias = False,
-            dropout = dropout
+            dropout = dropout,
+            gs_tau = 2.0,
+            gs_iters = 10
         )
         self.critic_head = mc.MLP(
             input_dim = embed_dim,
@@ -156,7 +132,7 @@ class ActorCritic(nn.Module):
             entropies: (B, N) - entropy of the probability distribution at each step
         """
         node_embed, graph_embed = self.get_embeddings(batch)
-        tours, logits, entropies = self.policy_decoder(graph_embed, node_embed, actions)  # (B, N), (B, N), (B, N)
+        tours, logits, entropies = self.policy_head(graph_embed, node_embed, actions)  # (B, N), (B, N), (B, N)
         return tours, logits, entropies
 
     def forward(self, batch: torch.Tensor, actions: torch.Tensor | None = None):
@@ -173,7 +149,7 @@ class ActorCritic(nn.Module):
         # 1. Encoder: Encode Input & normalize
         node_embed, graph_embed = self.get_embeddings(batch)
         # 2. Policy Decoder: Autoregressive Pointer Network
-        tours, logits, entropies = self.policy_decoder(graph_embed, node_embed, actions)  # (B, N), (B, N), (B, N)
+        tours, logits, entropies = self.policy_head(graph_embed, node_embed, actions)  # (B, N), (B, N), (B, N)
         # 3. Critic Head: Estimate state value
         state_values = self.critic_head(graph_embed).squeeze(1)  # (B,)
         return tours, logits, entropies, state_values
@@ -283,9 +259,9 @@ class ARPPOTrainer:
             old_lp_sum = torch.sum(log_probs, dim=1).detach()
 
         # --- 2. Calculate Advantage with GAE ---
-        # Normalized advantage over critic estimation
+        # Relative advantage over critic estimation
         advantage = values - actor_cost  # (B,)
-        advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
+        advantage = ((advantage + actor_cost) / actor_cost) * self.opts.reward_scale  # Apply reward scaling
 
         logger['tour_cost'].append(actor_cost.mean().item())
         logger['critic_cost'].append(values.mean().item())

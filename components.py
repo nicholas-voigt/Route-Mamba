@@ -383,6 +383,33 @@ class TourConstructor(nn.Module):
         """
         super(TourConstructor, self).__init__()
         self.method = method
+    
+    # --- Sampled Permutation Hardening ---
+    def sampled_hard_perm(self, soft_perm: torch.Tensor) -> torch.Tensor:
+        """
+        Converts a soft permutation matrix to a hard one by sampling from the categorical distribution defined by each row.
+        Args:
+            soft_perm: (tensor: B, N, N) soft permutation matrix - rows = nodes, cols = positions
+        Returns:
+            (tensor: B, N, N) hard permutation matrix
+        """
+        B, N, _ = soft_perm.shape
+        device = soft_perm.device
+
+        hard_perm = torch.zeros_like(soft_perm)
+        mask = torch.zeros_like(soft_perm)
+        batch_indices = torch.arange(B, device=device)
+
+        for i in range(N):
+            # Sample from categorical distribution defined by row i
+            dist = Categorical(logits=soft_perm[:, i, :])  # (B, N)
+            sampled_indices = dist.sample()  # (B,)
+            # Assign the sampled entry in the hard permutation matrix & mask out assigned columns
+            hard_perm[batch_indices, i, sampled_indices] = 1.0
+            mask[batch_indices, :, sampled_indices] = True
+            soft_perm = soft_perm.masked_fill(mask, float('-inf'))
+
+        return hard_perm
 
     # ---- Greedy Permutation Hardening ----
     def greedy_hard_perm(self, soft_perm: torch.Tensor) -> torch.Tensor:
@@ -452,6 +479,8 @@ class TourConstructor(nn.Module):
         """
         if self.method == "greedy":
             hard_perm = self.greedy_hard_perm(soft_perm)
+        elif self.method == "sampled":
+            hard_perm = self.sampled_hard_perm(soft_perm)
         elif self.method == "hungarian":
             hard_perm = self.hungarian_hard_perm(soft_perm)
         else:
