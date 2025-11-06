@@ -118,18 +118,25 @@ def get_heuristic_tours(batch: torch.Tensor, method: str):
     else:
         raise ValueError(f"Unknown method: {method}")
 
-def check_feasibility(solutions):
+def check_feasibility(observation, solution):
     """
-    Checks if each tour in solutions visits every node exactly once.
+    Checks if observation and solution nodes are identical and that each node is visited exactly once.
     Args:
-        solutions: (batch_size, size) tensor of node indices (permutations)
+        observation: (B, N, 2) tensor of node coordinates
+        solution: (B, N, 2) tensor of node coordinates in the proposed tour order
     Raises:
         AssertionError if any tour is infeasible.
     """
-    batch_size, size = solutions.size()
-    expected = torch.arange(size, device=solutions.device).view(1, -1).expand(batch_size, -1)
-    is_feasible = (solutions.sort(dim=1)[0] == expected).all(dim=1)
-    assert is_feasible.all(), "One or more tours do not visit all nodes exactly once."
+    # Sort both tensors along the node dimension for comparison
+    # We sort by x-coordinate first, then y-coordinate (lexicographic sort)
+    sol_sorted = solution[solution[:, :, 0].argsort(dim=1)]
+    sol_sorted = sol_sorted[sol_sorted[:, :, 1].argsort(dim=1, stable=True)]
+    
+    obs_sorted = observation[observation[:, :, 0].argsort(dim=1)]
+    obs_sorted = obs_sorted[obs_sorted[:, :, 1].argsort(dim=1, stable=True)]
+    
+    assert torch.allclose(obs_sorted, sol_sorted, rtol=1e-5, atol=1e-6), \
+        "Solution nodes do not match observation nodes"
 
 def compute_euclidean_tour(tour):
     """
