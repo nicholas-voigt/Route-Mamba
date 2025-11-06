@@ -134,15 +134,9 @@ def check_feasibility(observation, solution):
     
     obs_sorted = observation[observation[:, :, 0].argsort(dim=1)]
     obs_sorted = obs_sorted[obs_sorted[:, :, 1].argsort(dim=1, stable=True)]
-    
-    if not torch.allclose(obs_sorted, sol_sorted, rtol=1e-5, atol=1e-6):
-        # Detach and move to CPU for safe printing, then raise with tensors included
-        obs_print = observation.detach().cpu()
-        sol_print = solution.detach().cpu()
-        raise AssertionError(
-            f"Solution nodes do not match observation nodes\nObservation:\n{obs_print}\nSolution:\n{sol_print}"
-        )
 
+    assert torch.allclose(obs_sorted, sol_sorted, rtol=1e-5, atol=1e-6), f"Solution nodes do not match observation nodes: \n{obs_sorted}\n vs \n{sol_sorted}\n"
+    
 def compute_euclidean_tour(tour):
     """
     Compute the tour length using euclidean with x & y coordinates
