@@ -2,7 +2,6 @@ import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torch.nn import functional as F
-from torch.distributions.categorical import Categorical
 import time
 from tqdm import tqdm
 
@@ -34,6 +33,7 @@ class PolicyDecoder(nn.Module):
             gs_tau = gs_tau,
             gs_iters = gs_iters
         )
+        self.tour_constructor = mc.TourConstructor(method='sampled')
 
     def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -41,14 +41,13 @@ class PolicyDecoder(nn.Module):
         Args:
             graph_emb: (B, 2E) - graph embedding
             node_emb: (B, N, E) - node embeddings (for key projection)
-            actions: (B, N) - previously taken actions (for training)
+            actions: (B, N) - previously taken actions (for PPO training)
         Returns:
             tour: (B, N) - tensor of node indices representing the tour
-            log_probs: (B, N) - log-probability of each selected node at each step
-            entropies: (B, N) - entropy of the probability distribution at each step
+            log_probs: (B,) - log probability of the entire tour
+            entropies: (B,) - entropy of the tour distribution
         """
         B, N, _ = node_emb.shape
-        device = node_emb.device
 
         # Tour construction:
         # Project node embeddings to keys & concatenated graph and node embeddings to queries
@@ -60,11 +59,20 @@ class PolicyDecoder(nn.Module):
         logits = torch.bmm(keys, queries.transpose(1, 2))  # (B, N, C) @ (B, C, N) -> (B, N, N)
         norm_logits = self.sinkhorn_decoder(logits)
         
-        # Construct tour by sampling from the normalized logits
-        tour_perms = mc.TourConstructor(method='sampled')(norm_logits)
-        tours = tour_perms.argmax(dim=-1).long()  # (B, N)
-        log_probs = torch.sum(norm_logits * tour_perms, dim=-1)  # (B, N)
-        entropies = -torch.sum(norm_logits * torch.exp(norm_logits), dim=-1)  # (B, N)
+        if actions is None:
+            # Construct tour by sampling from the normalized logits
+            tour_perms = self.tour_constructor(norm_logits)
+            tours = tour_perms.argmax(dim=1).long()  # (B, N)
+        else:
+            # Use provided actions to reconstruct tour (for teacher forcing during training)
+            tour_perms = torch.zeros(B, N, N, device=actions.device)
+            batch_idx = torch.arange(B, device=actions.device).unsqueeze(1)  # (B, 1)
+            pos_idx = torch.arange(N, device=actions.device).unsqueeze(0)  # (1, N)
+            tour_perms[batch_idx, actions, pos_idx] = 1.0  # Set [batch, node, position] = 1
+            tours = actions  # (B, N)
+
+        log_probs = torch.sum(norm_logits * tour_perms, dim=(1, 2))  # (B,)
+        entropies = -torch.sum(norm_logits * torch.exp(norm_logits), dim=(1, 2))  # (B,)
 
         return tours, log_probs, entropies
 
@@ -86,7 +94,7 @@ class ActorCritic(nn.Module):
             key_proj_bias = False,
             dropout = dropout,
             gs_tau = 2.0,
-            gs_iters = 10
+            gs_iters = 5
         )
         self.critic_head = mc.MLP(
             input_dim = embed_dim,
@@ -109,29 +117,29 @@ class ActorCritic(nn.Module):
         graph_embed = node_embed.mean(dim=1)  # (B, E)
         return node_embed, graph_embed
 
-    def get_values(self, batch: torch.Tensor):
-        """
-        Args:
-            batch: (B, N, I) - node features with 2D coordinates
-        Returns:
-            state_values: (B,) - estimated state values for the input graphs
-        """
-        _, graph_embed = self.get_embeddings(batch)
-        return self.critic_head(graph_embed).squeeze(1)  # (B,)
+    # def get_values(self, batch: torch.Tensor):
+    #     """
+    #     Args:
+    #         batch: (B, N, I) - node features with 2D coordinates
+    #     Returns:
+    #         state_values: (B,) - estimated state values for the input graphs
+    #     """
+    #     _, graph_embed = self.get_embeddings(batch)
+    #     return self.critic_head(graph_embed).squeeze(1)  # (B,)
     
-    def get_actions(self, batch: torch.Tensor, actions: torch.Tensor | None = None):
-        """
-        Args:
-            batch: (B, N, I) - node features with 2D coordinates
-            actions: (B, N) - previously taken actions (for training)
-        Returns:
-            tours: (B, N) - node indices representing the tour
-            logits: (B, N) - log probability of chosen nodes at each step
-            entropies: (B, N) - entropy of the probability distribution at each step
-        """
-        node_embed, graph_embed = self.get_embeddings(batch)
-        tours, logits, entropies = self.policy_head(graph_embed, node_embed, actions)  # (B, N), (B, N), (B, N)
-        return tours, logits, entropies
+    # def get_actions(self, batch: torch.Tensor, actions: torch.Tensor | None = None):
+    #     """
+    #     Args:
+    #         batch: (B, N, I) - node features with 2D coordinates
+    #         actions: (B, N) - previously taken actions (for training)
+    #     Returns:
+    #         tours: (B, N) - node indices representing the tour
+    #         logits: (B, N) - log probability of chosen nodes at each step
+    #         entropies: (B, N) - entropy of the probability distribution at each step
+    #     """
+    #     node_embed, graph_embed = self.get_embeddings(batch)
+    #     tours, logits, entropies = self.policy_head(graph_embed, node_embed, actions)  # (B, N), (B, N), (B, N)
+    #     return tours, logits, entropies
 
     def forward(self, batch: torch.Tensor, actions: torch.Tensor | None = None):
         """
@@ -140,8 +148,8 @@ class ActorCritic(nn.Module):
             actions: (B, N) - previously taken actions (for training)
         Returns:
             tours: (B, N) - node indices representing the tour
-            logits: (B, N) - log probability of chosen nodes at each step
-            entropies: (B, N) - entropy of the probability distribution at each step
+            logits: (B,) - log probability of the entire tour
+            entropies: (B,) - entropy of the tours probability distribution
             state_values: (B,) - estimated state values for the input graphs
         """
         # 1. Encoder: Encode Input & normalize
@@ -198,6 +206,7 @@ class ARPPOTrainer:
 
             logger = {
                 'tour_cost': [],
+                'baseline_cost': [],
                 'critic_cost': [],
                 'actor_loss': [],
                 'critic_loss': [],
@@ -219,9 +228,10 @@ class ARPPOTrainer:
             print(f"Training Epoch {epoch} completed. Results:")
             print(f"-  Epoch Runtime: {epoch_duration:.2f}s")
             print(f"-  Average Tour Cost: {sum(logger['tour_cost'])/len(logger['tour_cost']):.4f}")
+            print(f"-  Average Baseline Cost: {sum(logger['baseline_cost'])/len(logger['baseline_cost']):.4f}")
             print(f"-  Average Critic Cost: {sum(logger['critic_cost'])/len(logger['critic_cost']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
-            # print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
+            print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
             print(f"-  Average Advantage: {sum(logger['advantage'])/len(logger['advantage']):.4f}")
             print(f"-  Average Policy Ratios: {sum(logger['ratios'])/len(logger['ratios']):.4f}")
             print(f"-  Average Entropy: {sum(logger['entropy'])/len(logger['entropy']):.4f}")
@@ -241,34 +251,33 @@ class ARPPOTrainer:
         # get observations (initial tours) through heuristic from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
         observation = get_heuristic_tours(batch['coordinates'], self.opts.initial_tours) # (B, N, 2)
-        B, N, _ = observation.size()
 
         # Actor forward pass
         with torch.no_grad():
-            action, log_probs, _ = self.model.get_actions(observation)
+            action, lp_sum, _, values = self.model(observation)
             tours = torch.gather(observation, 1, action.unsqueeze(-1).expand(-1, -1, observation.size(-1)))  # (B, N, 2)
             actor_cost = compute_euclidean_tour(tours)
 
-            # Heuristic baseline instead of learned critic
-            baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
-            values = compute_euclidean_tour(baseline_tours)
-
             # Store "old" policy
-            old_lp_sum = torch.sum(log_probs, dim=1).detach()
+            old_lp_sum = lp_sum.detach()
+            old_values = values.detach()
 
         # --- 2. Calculate Advantage with GAE ---
-        # Relative advantage over critic estimation
-        advantage = values - actor_cost  # (B,)
-        advantage = ((advantage + actor_cost) / actor_cost) * self.opts.reward_scale  # Apply reward scaling
+        # Heuristic baseline
+        baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
+        baseline_cost = compute_euclidean_tour(baseline_tours)
+
+        # Relative advantage over baseline
+        advantage = ((baseline_cost - actor_cost) / (baseline_cost + 1e-8)) * self.opts.reward_scale  # (B,)
 
         logger['tour_cost'].append(actor_cost.mean().item())
+        logger['baseline_cost'].append(baseline_cost.mean().item())
         logger['critic_cost'].append(values.mean().item())
 
         # --- 3. PPO Update (multiple epochs over collected data) ---
         for _ in range(4):
             # Re-evaluate actions with current policy
-            _, new_log_probs, entropy = self.model.get_actions(observation, actions=action)
-            new_lp_sum = torch.sum(new_log_probs, dim=1)  # (B,)
+            _, new_lp_sum, entropy, new_values = self.model(observation, actions=action)
 
             # Calculate ratio & clipped surrogate objective
             ratios = torch.exp(new_lp_sum - old_lp_sum)  # (B,)
@@ -278,15 +287,15 @@ class ARPPOTrainer:
             actor_loss = torch.max(actor_unclipped, actor_clipped).mean()
 
             # Critic loss (MSE)
-            # critic_unclipped = F.mse_loss(new_values, actor_cost.detach())
-            # critic_clipped = F.mse_loss(
-            #     old_values + torch.clamp(new_values - old_values, -clip_param, clip_param), 
-            #     actor_cost.detach()
-            # )
-            # critic_loss = torch.max(critic_unclipped, critic_clipped)
+            critic_unclipped = F.mse_loss(new_values, actor_cost.detach())
+            critic_clipped = F.mse_loss(
+                old_values + torch.clamp(new_values - old_values, -clip_param, clip_param), 
+                actor_cost.detach()
+            )
+            critic_loss = torch.max(critic_unclipped, critic_clipped)
 
             # Total loss
-            total_loss = actor_loss - 0.01 * entropy.sum(dim=1).mean()
+            total_loss = actor_loss + 0.1 * critic_loss - 0.01 * entropy.mean()
 
             # Backpropagation
             self.optimizer.zero_grad()
@@ -302,7 +311,7 @@ class ARPPOTrainer:
                 clip_fraction = ((ratios - 1.0).abs() > clip_param).float().mean()
             
             logger['actor_loss'].append(actor_loss.item())
-            # logger['critic_loss'].append(critic_loss.item())
+            logger['critic_loss'].append(critic_loss.item())
             logger['advantage'].append(advantage.mean().item())
             logger['ratios'].append(ratios.mean().item())
             logger['entropy'].append(entropy.mean().item())
