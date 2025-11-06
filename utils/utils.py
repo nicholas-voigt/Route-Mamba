@@ -141,8 +141,8 @@ def check_feasibility(observation, solution):
                 print(f"\n❌ Batch {b} FAILED feasibility check!")
                 print(f"Observation:\n{observation[b]}")
                 print(f"Solution:\n{solution[b]}")
-        
         raise AssertionError("Solution nodes do not match observation nodes!")    
+    
 def compute_euclidean_tour(tour):
     """
     Compute the tour length using euclidean with x & y coordinates

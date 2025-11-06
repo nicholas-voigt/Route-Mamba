@@ -33,7 +33,7 @@ class PolicyDecoder(nn.Module):
             gs_tau = gs_tau,
             gs_iters = gs_iters
         )
-        self.tour_constructor = mc.TourConstructor(method='greedy')
+        self.tour_constructor = mc.TourConstructor(method='sampled')
 
     def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -58,10 +58,11 @@ class PolicyDecoder(nn.Module):
         # normalize matrix using Sinkhorn operator to get doubly stochastic matrix
         logits = torch.bmm(keys, queries.transpose(1, 2))  # (B, N, C) @ (B, C, N) -> (B, N, N)
         norm_logits = self.sinkhorn_decoder(logits)
+        norm_probs = torch.exp(norm_logits)  # Convert log-probs to probs 
         
         if actions is None:
             # Construct tour by sampling from the normalized logits
-            tour_perms = self.tour_constructor(norm_logits)
+            tour_perms = self.tour_constructor(norm_probs)
             tours = tour_perms.argmax(dim=1).long()  # (B, N)
         else:
             # Use provided actions to reconstruct tour (for teacher forcing during training)
@@ -72,7 +73,7 @@ class PolicyDecoder(nn.Module):
             tours = actions  # (B, N)
 
         log_probs = torch.sum(norm_logits * tour_perms, dim=(1, 2))  # (B,)
-        entropies = -torch.sum(norm_logits * torch.exp(norm_logits), dim=(1, 2))  # (B,)
+        entropies = -torch.sum(norm_logits * norm_probs, dim=(1, 2))  # (B,)
 
         # # Logging for debugging
         # logits_print = logits.detach().cpu()
@@ -102,7 +103,7 @@ class Actor(nn.Module):
             mamba_hidden_dim = mamba_hidden_dim,
             key_proj_bias = False,
             dropout = dropout,
-            gs_tau = 2.0,
+            gs_tau = 0.5,
             gs_iters = 10
         )
 
@@ -226,8 +227,9 @@ class ARPPOTrainer:
         baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
         baseline_cost = compute_euclidean_tour(baseline_tours)
 
-        # Relative advantage over baseline (not normalized)
-        advantage = ((baseline_cost - actor_cost) / (baseline_cost + 1e-8)) * self.opts.reward_scale  # (B,)
+        # Normalized advantage over baseline
+        raw_advantage = ((baseline_cost - actor_cost) / (baseline_cost + 1e-8))  # (B,)
+        advantage = (raw_advantage - raw_advantage.mean()) / (raw_advantage.std() + 1e-8)  # Normalize advantage
 
         # --- 3. PPO Update (multiple epochs over collected data) ---
         ppo_metrics = {'actor_loss': [], 'entropy': [], 'ratios': [], 'clip_fraction': []}
