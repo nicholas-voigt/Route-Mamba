@@ -103,7 +103,7 @@ class Actor(nn.Module):
             mamba_hidden_dim = mamba_hidden_dim,
             key_proj_bias = False,
             dropout = dropout,
-            gs_tau = 0.5,
+            gs_tau = 1.0,
             gs_iters = 10
         )
 
