@@ -49,8 +49,6 @@ class PolicyDecoder(nn.Module):
         """
         B, N, _ = node_emb.shape
         device = node_emb.device
-        NEG = torch.finfo(node_emb.dtype).min
-        batch_indices = torch.arange(B, device=device)
 
         # Tour construction:
         # Project node embeddings to keys & concatenated graph and node embeddings to queries
@@ -64,8 +62,8 @@ class PolicyDecoder(nn.Module):
         
         # Construct tour by sampling from the normalized logits
         tour_perms = mc.TourConstructor(method='sampled')(norm_logits)
-        tours = tour_perms.argmax(dim=-1)  # (B, N)
-        log_probs = torch.gather(norm_logits, 2, tour_perms).squeeze(-1)  # (B, N)
+        tours = tour_perms.argmax(dim=-1).long()  # (B, N)
+        log_probs = torch.sum(norm_logits * tour_perms, dim=-1)  # (B, N)
         entropies = -torch.sum(norm_logits * torch.exp(norm_logits), dim=-1)  # (B, N)
 
         return tours, log_probs, entropies
