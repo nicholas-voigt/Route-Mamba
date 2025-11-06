@@ -74,6 +74,10 @@ class PolicyDecoder(nn.Module):
         log_probs = torch.sum(norm_logits * tour_perms, dim=(1, 2))  # (B,)
         entropies = -torch.sum(norm_logits * torch.exp(norm_logits), dim=(1, 2))  # (B,)
 
+        # Logging for debugging
+        print("Tour Permutations:", tour_perms, sep='\n')
+        print("Tours:", tours, sep='\n')
+
         return tours, log_probs, entropies
 
 
