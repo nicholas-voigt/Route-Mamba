@@ -33,7 +33,7 @@ class PolicyDecoder(nn.Module):
             gs_tau = gs_tau,
             gs_iters = gs_iters
         )
-        self.tour_constructor = mc.TourConstructor(method='sampled')
+        self.tour_constructor = mc.TourConstructor(method='greedy')
 
     def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -74,14 +74,14 @@ class PolicyDecoder(nn.Module):
         log_probs = torch.sum(norm_logits * tour_perms, dim=(1, 2))  # (B,)
         entropies = -torch.sum(norm_logits * torch.exp(norm_logits), dim=(1, 2))  # (B,)
 
-        # Logging for debugging
-        logits_print = logits.detach().cpu()
-        perm_print = tour_perms.detach().cpu()
-        tours_print = tours.detach().cpu()
-        for tour in range(B):
-            print("Logits:", logits_print[tour], sep='\n')
-            print("Permutation:", perm_print[tour], sep='\n')
-            print("Tour indices:", tours_print[tour], sep='\n')
+        # # Logging for debugging
+        # logits_print = logits.detach().cpu()
+        # perm_print = tour_perms.detach().cpu()
+        # tours_print = tours.detach().cpu()
+        # for tour in range(B):
+        #     print("Logits:", logits_print[tour], sep='\n')
+        #     print("Permutation:", perm_print[tour], sep='\n')
+        #     print("Tour indices:", tours_print[tour], sep='\n')
 
         return tours, log_probs, entropies
 
