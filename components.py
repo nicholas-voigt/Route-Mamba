@@ -410,7 +410,7 @@ class TourConstructor(nn.Module):
             scores.masked_fill_(col_mask.unsqueeze(1), NEG)
             # Flatten scores to sample from categorical distribution
             flat_scores = scores.view(B, -1)
-            dist = Categorical(flat_scores)  # (B, N*N)
+            dist = Categorical(logits=flat_scores)  # (B, N*N)
             sampled_flat = dist.sample()  # (B,)
             # Convert flat indices back to 2D indices
             sampled_node = sampled_flat // N
