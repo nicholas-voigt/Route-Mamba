@@ -387,28 +387,32 @@ class TourConstructor(nn.Module):
     # --- Sampled Permutation Hardening ---
     def sampled_hard_perm(self, soft_perm: torch.Tensor) -> torch.Tensor:
         """
-        Converts a soft permutation matrix to a hard one by sampling from the categorical distribution defined by each row.
+        Converts a soft permutation matrix to a hard one by sampling.
+        Creates a categorical distribution for each position (column).
         Args:
             soft_perm: (tensor: B, N, N) soft permutation matrix - rows = nodes, cols = positions
         Returns:
             (tensor: B, N, N) hard permutation matrix
         """
         B, N, _ = soft_perm.shape
-        device = soft_perm.device
+        device, dtype = soft_perm.device, soft_perm.dtype
+        NEG = torch.finfo(dtype).min
 
         hard_perm = torch.zeros_like(soft_perm)
-        mask = torch.zeros_like(soft_perm)
+        scores = soft_perm.clone()
+        row_mask = torch.zeros(B, N, dtype=torch.bool, device=device)
         batch_indices = torch.arange(B, device=device)
 
-        for i in range(N):
-            # Sample from categorical distribution defined by row i
-            dist = Categorical(logits=soft_perm[:, i, :])  # (B, N)
+        for i in range(N): # iterate over positions (columns)
+            # Mask out scores of already assigned nodes
+            scores[batch_indices, :, i].masked_fill_(row_mask[batch_indices, :], NEG)
+            # Sample from categorical distribution defined by column i
+            dist = Categorical(logits=scores[:, :, i])  # (B, N)
             sampled_indices = dist.sample()  # (B,)
-            # Assign the sampled entry in the hard permutation matrix & mask out assigned columns
-            hard_perm[batch_indices, i, sampled_indices] = 1.0
-            mask[batch_indices, :, sampled_indices] = True
-            soft_perm = soft_perm.masked_fill(mask, float('-inf'))
-
+            # Assign sampled position and update mask
+            hard_perm[batch_indices, sampled_indices, i] = 1.0
+            row_mask[batch_indices, sampled_indices] = True
+            
         return hard_perm
 
     # ---- Greedy Permutation Hardening ----
