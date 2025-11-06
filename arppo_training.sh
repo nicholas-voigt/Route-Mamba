@@ -63,12 +63,12 @@ pip3 install -q --no-cache-dir --no-build-isolation mamba-ssm
 ## Parameters:
 TRAINER="ar_ppo"
 GRAPH_SIZE=20
-PROBLEM_SIZE=100000
-N_EPOCHS=20
+PROBLEM_SIZE=10000
+N_EPOCHS=10
 BATCH_SIZE=512
 INITIAL_TOURS="polar"
 BASELINE_TOURS="greedy"
-ACTOR_LR=1e-2
+ACTOR_LR=1e-3
 ACTOR_LR_DECAY=0.95
 CRITIC_LR=1e-3
 CRITIC_LR_DECAY=0.95
