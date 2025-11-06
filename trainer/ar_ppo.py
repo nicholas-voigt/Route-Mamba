@@ -24,10 +24,11 @@ class PolicyDecoder(nn.Module):
         """
         super(PolicyDecoder, self).__init__()
         self.key_projection = nn.Linear(embed_dim, context_dim, bias=key_proj_bias)
-        self.query_projection = mc.MambaBlock(
-            mamba_model_size = context_dim,
-            mamba_hidden_state_size = mamba_hidden_dim,
-            dropout = dropout
+        self.query_projection = nn.Sequential(
+            mc.MambaBlock(context_dim, mamba_hidden_dim, dropout),
+            nn.LayerNorm(context_dim),
+            mc.MambaBlock(context_dim, mamba_hidden_dim, dropout),
+            nn.LayerNorm(context_dim)
         )
         self.sinkhorn_decoder = mc.GumbelSinkhornDecoder(
             gs_tau = gs_tau,
