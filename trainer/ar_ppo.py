@@ -33,7 +33,7 @@ class PolicyDecoder(nn.Module):
             gs_tau = gs_tau,
             gs_iters = gs_iters
         )
-        self.tour_constructor = mc.TourConstructor(method='sampled')
+        self.tour_constructor = mc.TourConstructor(method='greedy')
 
     def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -103,7 +103,7 @@ class Actor(nn.Module):
             mamba_hidden_dim = mamba_hidden_dim,
             key_proj_bias = False,
             dropout = dropout,
-            gs_tau = 1.0,
+            gs_tau = 0.5,
             gs_iters = 10
         )
 
@@ -240,7 +240,7 @@ class ARPPOTrainer:
 
             # Calculate ratio & clipped surrogate objective
             ratios = torch.exp(new_lp_sum - old_lp_sum)  # (B,)
-            clip_param = 0.2
+            clip_param = 0.5
             actor_unclipped = -advantage * ratios
             actor_clipped = -advantage * torch.clamp(ratios, 1 - clip_param, 1 + clip_param)
             actor_loss = torch.max(actor_unclipped, actor_clipped).mean()
