@@ -400,18 +400,25 @@ class TourConstructor(nn.Module):
 
         hard_perm = torch.zeros_like(soft_perm)
         scores = soft_perm.clone()
-        row_mask = torch.zeros(B, N, dtype=torch.bool, device=device)
+        row_mask = torch.zeros(B, N, dtype=torch.bool, device=device)  # Track assigned nodes
+        col_mask = torch.zeros(B, N, dtype=torch.bool, device=device)  # Track assigned positions
         batch_indices = torch.arange(B, device=device)
 
         for i in range(N): # iterate over positions (columns)
-            # Mask out scores of already assigned nodes
-            scores[batch_indices, :, i].masked_fill_(row_mask[batch_indices, :], NEG)
-            # Sample from categorical distribution defined by column i
-            dist = Categorical(logits=scores[:, :, i])  # (B, N)
-            sampled_indices = dist.sample()  # (B,)
+            # Mask out scores of already assigned rows and columns via broadcasting
+            scores.masked_fill_(row_mask.unsqueeze(2), NEG)
+            scores.masked_fill_(col_mask.unsqueeze(1), NEG)
+            # Flatten scores to sample from categorical distribution
+            flat_scores = scores.view(B, -1)
+            dist = Categorical(flat_scores)  # (B, N*N)
+            sampled_flat = dist.sample()  # (B,)
+            # Convert flat indices back to 2D indices
+            sampled_node = sampled_flat // N
+            sampled_pos = sampled_flat % N
             # Assign sampled position and update mask
-            hard_perm[batch_indices, sampled_indices, i] = 1.0
-            row_mask[batch_indices, sampled_indices] = True
+            hard_perm[batch_indices, sampled_node, sampled_pos] = 1.0
+            row_mask[batch_indices, sampled_node] = True
+            col_mask[batch_indices, sampled_pos] = True
             
         return hard_perm
 
