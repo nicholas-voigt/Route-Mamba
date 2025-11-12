@@ -126,10 +126,9 @@ class ARTrainer:
             # update learning rates
             self.actor_scheduler.step()
 
-            # if (self.opts.checkpoint_epochs != 0 and epoch % self.opts.checkpoint_epochs == 0) or epoch == self.opts.n_epochs - 1:
-            #     torch.save(self.actor, f"{self.opts.save_dir}/actor_{self.opts.problem}_epoch{epoch + 1}.pt")
-            #     torch.save(self.critic, f"{self.opts.save_dir}/critic_{self.opts.problem}_epoch{epoch + 1}.pt")
-            #     print(f"Saved actor and critic models at epoch {epoch + 1} to {self.opts.save_dir}")
+            if (self.opts.checkpoint_epochs != 0 and epoch % self.opts.checkpoint_epochs == 0) or epoch == self.opts.n_epochs - 1:
+                torch.save(self.actor, f"{self.opts.save_dir}/actor_{self.opts.problem}_epoch{epoch + 1}.pt")
+                print(f"Saved actor model at epoch {epoch + 1} to {self.opts.save_dir}")
 
 
     def train_batch(self, batch: dict, logger: dict, warmup_mode: bool = False):
