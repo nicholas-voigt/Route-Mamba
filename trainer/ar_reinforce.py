@@ -6,7 +6,7 @@ import time
 from tqdm import tqdm
 
 import components as mc
-from utils.utils import compute_euclidean_tour, get_heuristic_tours
+from utils.utils import compute_euclidean_tour, get_heuristic_tours, check_feasibility
 from utils.logger import log_gradients
 
 
@@ -20,30 +20,38 @@ class Actor(nn.Module):
             embedding_dim = embed_dim
         )
         self.embedding_norm = nn.LayerNorm(embed_dim)
-        self.decoder = mc.ARPointerDecoder(
-            embedding_dim = embed_dim,
-            mamba_hidden_dim = mamba_hidden_dim,
-            key_proj_bias = False,
-            dropout = dropout
+        self.encoder = mc.BidirectionalMambaEncoder(
+            mamba_model_size = embed_dim,
+            mamba_hidden_state_size = mamba_hidden_dim,
+            dropout = dropout,
+            mamba_layers = mamba_layers
         )
+        self.encoder_norm = nn.LayerNorm(2 * embed_dim)
+        self.policy_decoder = mc.ARPointerDecoder(embedding_dim = 2 * embed_dim)
 
-    def forward(self, batch):
+    def forward(self, batch: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             batch: (B, N, I) - node features with 2D coordinates
+            actions: (B, N, N) - previously taken actions as permutation (for training)
         Returns:
             tours: (B, N) - node indices representing the tour
-            logits: (B, N) - log probability of chosen nodes at each step
-            entropies: (B, N) - entropy of the probability distribution at each step
+            log_probs: (B,) - log probability of the entire tour
+            entropies: (B,) - entropy of the tours probability distribution
         """
-        # 1. Encoder: Encode Input & normalize
-        node_embed = self.feature_embedder(batch)  # (B, N, E)
-        node_embed = self.embedding_norm(node_embed)  # (B, N, E)
-        graph_embed = node_embed.mean(dim=1)  # (B, E)
+        # 1. Create Embeddings & normalize
+        embeddings = self.feature_embedder(batch)  # (B, N, E)
+        embeddings = self.embedding_norm(embeddings)  # (B, N, E)
 
-        # 2. Decoding Workshop: Autoregressive Pointer Network
-        tours, logits, entropies = self.decoder(graph_embed, node_embed)  # (B, N), (B, N), (B, N)
-        return tours, logits, entropies
+        # 2. Encoder: Layered Mamba blocks with internal Pre-LN
+        encoded_features = self.encoder(embeddings)
+        encoded_features = self.encoder_norm(encoded_features)   # (B, N, 2E)
+        graph_embed = encoded_features.mean(dim=1)  # (B, 2E)
+
+        # 3. Score Construction: Decode tours using Mamba + attention + Sinkhorn
+        tour_idxs, log_probs, entropies = self.policy_decoder(graph_embed, encoded_features, actions)
+
+        return tour_idxs, torch.sum(log_probs, dim=1), torch.sum(entropies, dim=1)
 
 
 class ARTrainer:
@@ -89,8 +97,8 @@ class ARTrainer:
             print(f"-  Actor Learning Rate: {self.actor_optimizer.param_groups[0]['lr']:.6f}")
 
             logger = {
-                'critic_cost': [],
-                'actual_cost': [],
+                'tour_cost': [],
+                'baseline_cost': [],
                 'actor_loss': [],
                 'advantage': [],
                 'log_likelihood': [],
@@ -108,8 +116,8 @@ class ARTrainer:
             epoch_duration = time.time() - start_time
             print(f"Training Epoch {epoch} completed. Results:")
             print(f"-  Epoch Runtime: {epoch_duration:.2f}s")
-            print(f"-  Average Critic Cost: {sum(logger['critic_cost'])/len(logger['critic_cost']):.4f}")
-            print(f"-  Average Actual Cost: {sum(logger['actual_cost'])/len(logger['actual_cost']):.4f}")
+            print(f"-  Average Tour Cost: {sum(logger['tour_cost'])/len(logger['tour_cost']):.4f}")
+            print(f"-  Average Baseline Cost: {sum(logger['baseline_cost'])/len(logger['baseline_cost']):.4f}")
             print(f"-  Average Actor Loss: {sum(logger['actor_loss'])/len(logger['actor_loss']):.4f}")
             print(f"-  Average Advantage: {sum(logger['advantage'])/len(logger['advantage']):.4f}")
             print(f"-  Average Log Likelihood: {sum(logger['log_likelihood'])/len(logger['log_likelihood']):.4f}")
@@ -125,36 +133,35 @@ class ARTrainer:
 
 
     def train_batch(self, batch: dict, logger: dict, warmup_mode: bool = False):
-        # get observations (initial tours) through heuristic from the environment
+        # get observations (Polar-ordered coordinates (canonical representation)) from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
         observation = get_heuristic_tours(batch['coordinates'], self.opts.initial_tours) # (B, N, 2)
 
         # Actor forward pass
-        tour_indices, log_probs, entropies = self.actor(observation) # (B, N), (B, N), (B, N)
+        tour_indices, lp_sums, entropy_sums = self.actor(observation) # (B, N), (B,), (B,)
         tours = torch.gather(observation, 1, tour_indices.unsqueeze(-1).expand(-1, -1, observation.size(-1)))  # (B, N, 2)
+        tour_cost = compute_euclidean_tour(tours)
 
-        # Calculate actual cost of the tours generated by the actor
-        actual_cost = compute_euclidean_tour(tours)
+        check_feasibility(observation, tours)
 
-        # Using greedy baseline
-        baseline_tours = get_heuristic_tours(batch['coordinates'], self.opts.baseline_tours)
-        estimated_cost = compute_euclidean_tour(baseline_tours)
+        # Heuristic baseline (greedy)
+        baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
+        baseline_cost = compute_euclidean_tour(baseline_tours)
 
         # Baseline Logging
-        logger['critic_cost'].append(estimated_cost.mean().item())
+        logger['baseline_cost'].append(baseline_cost.mean().item())
 
-        # Actor loss using REINFORCE with critic baseline
-        log_likelihood = torch.sum(log_probs, dim=1)  # (B,)
-        entropy = torch.sum(entropies, dim=1)  # (B,)
-        advantage = ((actual_cost - estimated_cost) / estimated_cost) * self.opts.reward_scale  # Apply reward scaling
-        actor_loss = advantage.mean() - 0.1 * entropy.mean()
+        # Actor loss using REINFORCE with heuristic baseline
+        log_likelihood = -lp_sums
+        advantage = ((tour_cost - baseline_cost) / baseline_cost) * self.opts.reward_scale  # Apply reward scaling
+        actor_loss = advantage.mean() - 0.1 * entropy_sums.mean()
 
         # Logging
-        logger['actual_cost'].append(actual_cost.mean().item())
+        logger['tour_cost'].append(tour_cost.mean().item())
         logger['actor_loss'].append(actor_loss.item())
         logger['advantage'].append(advantage.mean().item())
         logger['log_likelihood'].append(log_likelihood.mean().item())
-        logger['entropy'].append(entropy.mean().item())
+        logger['entropy'].append(entropy_sums.mean().item())
 
         # Actor Update
         self.actor_optimizer.zero_grad()

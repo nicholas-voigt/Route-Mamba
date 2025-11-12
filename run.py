@@ -6,7 +6,7 @@ import torch
 from problems.tsp import TSP
 from trainer.spg import SPGTrainer
 from trainer.pppo import PPPOTrainer
-from trainer.autoregressive import ARTrainer
+from trainer.ar_reinforce import ARTrainer
 from trainer.ar_ppo import ARPPOTrainer
 from options import get_options
 
