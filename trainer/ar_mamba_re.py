@@ -63,9 +63,12 @@ class Actor(nn.Module):
 
         # 4. Tour Construction: Sample or reconstruct tours
         tour_perms = self.tour_constructor(logits)
-        log_probs = torch.sum(logits * tour_perms, dim=(1, 2))  # (B,)
-        probs = torch.exp(logits)
-        entropies = -torch.sum(logits * probs, dim=(1, 2))  # (B,)
+
+        log_probs_matrix = torch.log_softmax(logits, dim=-1)
+        log_probs = torch.sum(log_probs_matrix * tour_perms, dim=(1, 2))  # (B,)
+
+        probs_matrix = torch.softmax(logits, dim=-1)
+        entropies = -torch.sum(log_probs_matrix * probs_matrix, dim=(1, 2))  # (B,)
 
         return tour_perms, log_probs, entropies
 
