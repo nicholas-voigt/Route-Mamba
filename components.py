@@ -608,6 +608,7 @@ class ARMambaDecoder(nn.Module):
         """
         super(ARMambaDecoder, self).__init__()
         context_dim = 2 * embed_dim  # graph embedding + node embedding
+        self.C = 10.0 # bounding factor for attention logits
         self.key_projection = nn.Linear(embed_dim, context_dim, bias=key_proj_bias)
         self.query_projection = nn.ModuleList([
             MambaBlock(context_dim, mamba_hidden_dim, dropout) for _ in range(mamba_layers)
@@ -629,6 +630,7 @@ class ARMambaDecoder(nn.Module):
 
         # Calculate attention scores (logits) for all nodes as a matrix multiplication between keys and queries
         logits = torch.bmm(keys, queries.transpose(1, 2))  # (B, N, C) @ (B, C, N) -> (B, N, N)
+        logits = self.C * torch.tanh(logits)
         return logits
 
 
