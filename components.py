@@ -131,7 +131,9 @@ class StructuralEmbeddingNet(nn.Module):
         # Compute pairwise distances, ignore self-distances and normalize
         dists = torch.cdist(x, x)
         dists.diagonal(dim1=1, dim2=2).fill_(float('inf'))
-        weights = F.softmax((1.0 / (dists + 1e-6)), dim=2)  # [B, N, N]
+        inv_dists = 1.0 / (dists + 1e-6)
+        inv_dists_norm = inv_dists / inv_dists.max(dim=2, keepdim=True).values
+        weights = inv_dists_norm / inv_dists_norm.sum(dim=2, keepdim=True)  # [B, N, N]
         # Aggregate neighbor embeddings using weighted sum & project
         neighbor_emb = self.neighbor_encoder(torch.bmm(weights, node_emb))  # [B, N, N] @ [B, N, E // 2] -> [B, N, E // 2]
 
