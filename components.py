@@ -514,7 +514,7 @@ class ARPointerDecoder(nn.Module):
         """
         super(ARPointerDecoder, self).__init__()
         context_dim = 3 * embedding_dim  # graph embedding + 2 node embeddings
-        self.C = 10.0 # clipping factor for attention logits
+        self.scale = math.sqrt(context_dim)  # Attention temperature
 
         self.query_projection = nn.Linear(context_dim, context_dim, bias=False)  # project context to query
         self.key_projection = nn.Linear(embedding_dim, context_dim, bias=False)  # project node embeddings for key/value
@@ -547,7 +547,6 @@ class ARPointerDecoder(nn.Module):
         log_probs = torch.zeros(B, N, dtype=torch.float32, device=device)
         entropies = torch.zeros(B, N, dtype=torch.float32, device=device)
         mask = torch.zeros(B, N, dtype=torch.bool, device=device, requires_grad=False)
-        assert not mask.requires_grad, "Mask should not require gradients."
         
         # Pre-compute keys for all nodes for efficiency
         keys = self.key_projection(node_emb) # (B, N, context_dim)
@@ -565,8 +564,14 @@ class ARPointerDecoder(nn.Module):
             query = self.query_norm(query) 
 
             # Calculate attention scores (logits) by pointing & mask out already visited nodes
-            logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
+            logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N)
+            logits = logits / self.scale  # ✅ Scale down by sqrt(d_k)!
 
+            current_mask = mask.clone()
+            logits = logits.masked_fill(current_mask, NEG)
+            
+            probs = F.softmax(logits, dim=-1)
+            
             # ✅ DEBUG: Check logits on first batch, first iteration
             if t == 0:
                 print(f"\n[DEBUG Epoch 0, Step 0]")
@@ -574,51 +579,34 @@ class ARPointerDecoder(nn.Module):
                 print(f"Query norm: {query.norm(dim=-1).mean().item():.4f}")
                 print(f"Keys range: [{keys.min().item():.4f}, {keys.max().item():.4f}]")
                 print(f"Keys norm: {keys.norm(dim=-1).mean().item():.4f}")
-                print(f"Logits BEFORE tanh: [{logits.min().item():.4f}, {logits.max().item():.4f}]")
+                print(f"Logits: [{logits.min().item():.4f}, {logits.max().item():.4f}]")
                 print(f"Logits std: {logits.std().item():.4f}")
-                
-                logits = self.C * torch.tanh(logits)
-                print(f"Logits AFTER tanh: [{logits.min().item():.4f}, {logits.max().item():.4f}]")
-                
-                current_mask = mask.clone()
-                logits = logits.masked_fill(current_mask, NEG)
-                
-                probs = F.softmax(logits, dim=-1)
                 print(f"Probs: {probs[0, :5]}")  # First 5 nodes of first batch
                 print(f"Prob std: {probs.std().item():.4f}")
                 print(f"Max prob: {probs.max().item():.4f}, Min prob: {probs.min().item():.4f}\n")
-            else:
-                logits = self.C * torch.tanh(logits)
-                curr_mask = mask.clone()
-                logits = logits.masked_fill(curr_mask, NEG)  # Mask out visited nodes
-
-                # Get probability, log-probability & entropy over next nodes
-                probs = F.softmax(logits, dim=-1)
             
             log_prob_dist = F.log_softmax(logits, dim=-1)
             entropy_t = -(log_prob_dist * probs).sum(dim=1)
 
+            # Sample or use provided actions
             if actions is None:
-                # Sample next node from the distributions
                 dist = Categorical(probs)
-                next_node_idx = dist.sample()  # (B,)
+                next_node_idx = dist.sample()
             else:
-                # Use provided actions (teacher forcing)
-                next_node_idx = actions[:, t]  # (B,)
+                next_node_idx = actions[:, t]
 
-            # Get log-probability of the selected node
             log_prob_t = log_prob_dist.gather(1, next_node_idx.unsqueeze(1)).squeeze(1)  # (B,)
 
             # Store results
             mask.scatter_(1, next_node_idx.unsqueeze(1), True)
-
             tours[batch_indices, t] = next_node_idx
             log_probs[batch_indices, t] = log_prob_t
             entropies[batch_indices, t] = entropy_t
 
             # Update nodes for next iteration
             prev_node_emb = node_emb[batch_indices, next_node_idx, :]
-            if t == 0: first_node_emb = prev_node_emb
+            if t == 0: 
+                first_node_emb = prev_node_emb
 
         return tours, log_probs, entropies
 
