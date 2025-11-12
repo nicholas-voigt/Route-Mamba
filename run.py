@@ -5,6 +5,7 @@ import torch
 
 from problems.tsp import TSP
 from trainer.spg import SPGTrainer
+from trainer.pppo import PPPOTrainer
 from trainer.autoregressive import ARTrainer
 from trainer.ar_ppo import ARPPOTrainer
 from options import get_options
@@ -20,6 +21,7 @@ def load_problem(name):
 def load_trainer(name):
     trainer = {
         'spg': SPGTrainer,
+        '3po': PPPOTrainer,
         'ar': ARTrainer,
         'ar_ppo': ARPPOTrainer
     }.get(name, None)
