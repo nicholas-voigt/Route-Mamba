@@ -193,8 +193,11 @@ class PPPOTrainer:
                 print(f"-  Critic Learning Rate: {self.critic_optimizer.param_groups[0]['lr']:.6f}")
                 
                 logger = {
+                    'tour_cost': [],
+                    'baseline_cost': [],
                     'critic_cost': [],
-                    'critic_loss': []
+                    'critic_loss': [],
+                    'advantage': [],
                 }
 
                 # training batch loop
