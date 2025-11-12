@@ -615,9 +615,9 @@ class ARMambaDecoder(nn.Module):
         self.scale = math.sqrt(context_dim) # bounding factor for attention logits
 
         self.key_projection = nn.Linear(embed_dim, context_dim, bias=key_proj_bias)
-        self.query_projection = nn.ModuleList([
-            MambaBlock(context_dim, mamba_hidden_dim, dropout) for _ in range(mamba_layers)
-        ])
+        self.query_projection = nn.Sequential(
+            *[MambaBlock(context_dim, mamba_hidden_dim, dropout) for _ in range(mamba_layers)]
+        )
 
         self.query_norm = nn.LayerNorm(context_dim)
         self.key_norm = nn.LayerNorm(context_dim)
