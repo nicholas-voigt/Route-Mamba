@@ -515,8 +515,13 @@ class ARPointerDecoder(nn.Module):
         super(ARPointerDecoder, self).__init__()
         context_dim = 3 * embedding_dim  # graph embedding + 2 node embeddings
         self.C = 10.0 # clipping factor for attention logits
+
         self.query_projection = nn.Linear(context_dim, context_dim, bias=False)  # project context to query
         self.key_projection = nn.Linear(embedding_dim, context_dim, bias=False)  # project node embeddings for key/value
+
+        self.query_norm = nn.LayerNorm(context_dim)
+        self.key_norm = nn.LayerNorm(context_dim)
+
         # node at step t=0 as learnable parameter
         self.start_token_emb = nn.Parameter(torch.randn(1, 1, embedding_dim))
 
@@ -546,6 +551,7 @@ class ARPointerDecoder(nn.Module):
         
         # Pre-compute keys for all nodes for efficiency
         keys = self.key_projection(node_emb) # (B, N, context_dim)
+        keys = self.key_norm(keys)
 
         # Create starting state
         start_emb = self.start_token_emb.expand(B, -1, -1).squeeze(1)  # (B, E)
@@ -556,6 +562,7 @@ class ARPointerDecoder(nn.Module):
         for t in range(N):
             state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1)  # (B, context_dim)
             query = self.query_projection(state)
+            query = self.query_norm(query) 
 
             # Calculate attention scores (logits) by pointing & mask out already visited nodes
             logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
