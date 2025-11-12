@@ -587,6 +587,45 @@ class ARPointerDecoder(nn.Module):
         return tours, log_probs, entropies
 
 
+class ARMambaDecoder(nn.Module):
+    def __init__(self, embed_dim: int, mamba_hidden_dim: int, mamba_layers: int, key_proj_bias: bool, dropout: float):
+        """
+        Decoder for TSP in autoregressive style but faster with mamba scan.
+        Takes node embeddings and graph embeddings as input and produces a tour.
+        Uses Mamba for context encoding and query formulation and Transformer-style attention for pointing.
+        Args:
+            embedding_dim: Dimension of the input embeddings for one node
+            mamba_hidden_dim: Hidden state size for Mamba
+            mamba_layers: Number of Mamba layers stacked
+            key_proj_bias: Bias for key projection layer
+            dropout: Dropout rate for regularization
+        """
+        super(ARMambaDecoder, self).__init__()
+        context_dim = 2 * embed_dim  # graph embedding + node embedding
+        self.key_projection = nn.Linear(embed_dim, context_dim, bias=key_proj_bias)
+        self.query_projection = nn.ModuleList([
+            MambaBlock(context_dim, mamba_hidden_dim, dropout) for _ in range(mamba_layers)
+        ])
+
+    def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass for the autoregressive decoder using Mamba.
+        Args:
+            graph_emb: (B, E) - graph embedding
+            node_emb: (B, N, E) - node embeddings (for key projection)
+        Returns:
+            logits: (B, N, N) - score matrix representing node-to-position scores
+        """
+        B, N, _ = node_emb.shape
+
+        keys = self.key_projection(node_emb) # (B, N, C)
+        queries = self.query_projection(torch.cat([graph_emb.unsqueeze(1).expand(-1, N, -1), node_emb], dim=-1))  # (B, N, C)
+
+        # Calculate attention scores (logits) for all nodes as a matrix multiplication between keys and queries
+        logits = torch.bmm(keys, queries.transpose(1, 2))  # (B, N, C) @ (B, C, N) -> (B, N, N)
+        return logits
+
+
 class ConvolutionBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int):
         """
