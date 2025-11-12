@@ -571,20 +571,6 @@ class ARPointerDecoder(nn.Module):
             logits = logits.masked_fill(current_mask, NEG)
             
             probs = F.softmax(logits, dim=-1)
-            
-            # ✅ DEBUG: Check logits on first batch, first iteration
-            if t == 0:
-                print(f"\n[DEBUG Epoch 0, Step 0]")
-                print(f"Query range: [{query.min().item():.4f}, {query.max().item():.4f}]")
-                print(f"Query norm: {query.norm(dim=-1).mean().item():.4f}")
-                print(f"Keys range: [{keys.min().item():.4f}, {keys.max().item():.4f}]")
-                print(f"Keys norm: {keys.norm(dim=-1).mean().item():.4f}")
-                print(f"Logits: [{logits.min().item():.4f}, {logits.max().item():.4f}]")
-                print(f"Logits std: {logits.std().item():.4f}")
-                print(f"Probs: {probs[0, :5]}")  # First 5 nodes of first batch
-                print(f"Prob std: {probs.std().item():.4f}")
-                print(f"Max prob: {probs.max().item():.4f}, Min prob: {probs.min().item():.4f}\n")
-            
             log_prob_dist = F.log_softmax(logits, dim=-1)
             entropy_t = -(log_prob_dist * probs).sum(dim=1)
 
