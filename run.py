@@ -6,7 +6,8 @@ import torch
 from problems.tsp import TSP
 from trainer.perm_reinforce import SPGTrainer
 from trainer.perm_ppo import PPPOTrainer
-from trainer.ar_reinforce import ARTrainer
+from trainer.ar_standard_re import ARTrainer
+from trainer.ar_mamba_re import ARMambaTrainer
 from trainer.ar_ppo import ARPPOTrainer
 from options import get_options
 
@@ -23,6 +24,7 @@ def load_trainer(name):
         'spg': SPGTrainer,
         '3po': PPPOTrainer,
         'ar': ARTrainer,
+        'ar_mamba': ARMambaTrainer,
         'ar_ppo': ARPPOTrainer
     }.get(name, None)
     assert trainer is not None, "Currently unsupported trainer: {}!".format(name)

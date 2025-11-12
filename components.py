@@ -612,11 +612,15 @@ class ARMambaDecoder(nn.Module):
         """
         super(ARMambaDecoder, self).__init__()
         context_dim = 2 * embed_dim  # graph embedding + node embedding
-        self.C = 10.0 # bounding factor for attention logits
+        self.scale = math.sqrt(context_dim) # bounding factor for attention logits
+
         self.key_projection = nn.Linear(embed_dim, context_dim, bias=key_proj_bias)
         self.query_projection = nn.ModuleList([
             MambaBlock(context_dim, mamba_hidden_dim, dropout) for _ in range(mamba_layers)
         ])
+
+        self.query_norm = nn.LayerNorm(context_dim)
+        self.key_norm = nn.LayerNorm(context_dim)
 
     def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor) -> torch.Tensor:
         """
@@ -630,11 +634,13 @@ class ARMambaDecoder(nn.Module):
         B, N, _ = node_emb.shape
 
         keys = self.key_projection(node_emb) # (B, N, C)
+        keys = self.key_norm(keys)
         queries = self.query_projection(torch.cat([graph_emb.unsqueeze(1).expand(-1, N, -1), node_emb], dim=-1))  # (B, N, C)
+        queries = self.query_norm(queries)
 
         # Calculate attention scores (logits) for all nodes as a matrix multiplication between keys and queries
         logits = torch.bmm(keys, queries.transpose(1, 2))  # (B, N, C) @ (B, C, N) -> (B, N, N)
-        logits = self.C * torch.tanh(logits)
+        logits = logits / self.scale  # Scale down by sqrt(d_k)!
         return logits
 
 
