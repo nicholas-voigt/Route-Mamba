@@ -559,12 +559,35 @@ class ARPointerDecoder(nn.Module):
 
             # Calculate attention scores (logits) by pointing & mask out already visited nodes
             logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
-            logits = self.C * torch.tanh(logits)
-            curr_mask = mask.clone()
-            logits = logits.masked_fill(curr_mask, NEG)  # Mask out visited nodes
 
-            # Get probability, log-probability & entropy over next nodes
-            probs = F.softmax(logits, dim=-1)
+            # ✅ DEBUG: Check logits on first batch, first iteration
+            if t == 0:
+                print(f"\n[DEBUG Epoch 0, Step 0]")
+                print(f"Query range: [{query.min().item():.4f}, {query.max().item():.4f}]")
+                print(f"Query norm: {query.norm(dim=-1).mean().item():.4f}")
+                print(f"Keys range: [{keys.min().item():.4f}, {keys.max().item():.4f}]")
+                print(f"Keys norm: {keys.norm(dim=-1).mean().item():.4f}")
+                print(f"Logits BEFORE tanh: [{logits.min().item():.4f}, {logits.max().item():.4f}]")
+                print(f"Logits std: {logits.std().item():.4f}")
+                
+                logits = self.C * torch.tanh(logits)
+                print(f"Logits AFTER tanh: [{logits.min().item():.4f}, {logits.max().item():.4f}]")
+                
+                current_mask = mask.clone()
+                logits = logits.masked_fill(current_mask, NEG)
+                
+                probs = F.softmax(logits, dim=-1)
+                print(f"Probs: {probs[0, :5]}")  # First 5 nodes of first batch
+                print(f"Prob std: {probs.std().item():.4f}")
+                print(f"Max prob: {probs.max().item():.4f}, Min prob: {probs.min().item():.4f}\n")
+            else:
+                logits = self.C * torch.tanh(logits)
+                curr_mask = mask.clone()
+                logits = logits.masked_fill(curr_mask, NEG)  # Mask out visited nodes
+
+                # Get probability, log-probability & entropy over next nodes
+                probs = F.softmax(logits, dim=-1)
+            
             log_prob_dist = F.log_softmax(logits, dim=-1)
             entropy_t = -(log_prob_dist * probs).sum(dim=1)
 
