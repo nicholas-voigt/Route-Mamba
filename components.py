@@ -502,32 +502,25 @@ class TourConstructor(nn.Module):
 
 
 class ARPointerDecoder(nn.Module):
-    def __init__(self, embedding_dim: int, mamba_hidden_dim: int, key_proj_bias: bool, dropout: float):
+    def __init__(self, embedding_dim: int):
         """
         Autoregressive Pointer Decoder for TSP.
         Takes node embeddings and graph embeddings as input and produces a tour iteratively (autoregressive).
-        Uses Mamba for context encoding and query formulation and Transformer-style attention for pointing.
+        Uses linear layers for context encoding and query formulation and Transformer-style attention for pointing.
         Args:
             embedding_dim: Dimension of the input embeddings for one node
-            mamba_hidden_dim: Hidden state size for Mamba
-            key_proj_bias: Bias for key projection layer
-            dropout: Dropout rate for regularization
         """
         super(ARPointerDecoder, self).__init__()
         context_dim = 3 * embedding_dim  # graph embedding + 2 node embeddings
-        self.query_projection = MambaBlock(
-            mamba_model_size = context_dim,
-            mamba_hidden_state_size = mamba_hidden_dim,
-            dropout = dropout
-        )
-        self.key_projection = nn.Linear(embedding_dim, context_dim, bias=key_proj_bias)  # project node embeddings for key/value
+        self.query_projection = nn.Linear(context_dim, context_dim, bias=False)  # project context to query
+        self.key_projection = nn.Linear(embedding_dim, context_dim, bias=False)  # project node embeddings for key/value
 
     def forward(self, graph_emb: torch.Tensor, node_emb: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass for the autoregressive pointer decoder.
         Args:
-            graph_emb: (B, 2E) - graph embedding
-            node_emb: (B, N, 2E) - node embeddings
+            graph_emb: (B, E) - graph embedding
+            node_emb: (B, N, E) - node embeddings
             actions: (B, N) - previously taken actions (for training)
         Returns:
             tour: (B, N) - tensor of node indices representing the tour
@@ -554,8 +547,8 @@ class ARPointerDecoder(nn.Module):
 
         # --- Autoregressive Decoding Loop ---
         for t in range(N):
-            state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1).unsqueeze(1)  # (B, 1, context_dim)
-            query = self.query_projection(state).squeeze(1)  # (B, context_dim)
+            state = torch.cat([graph_emb, first_node_emb, prev_node_emb], dim=-1)  # (B, context_dim)
+            query = self.query_projection(state)
 
             # Calculate attention scores (logits) by pointing & mask out already visited nodes
             logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
