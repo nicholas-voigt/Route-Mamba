@@ -149,8 +149,11 @@ class ARTrainer:
         baseline_cost = compute_euclidean_tour(baseline_tours)
 
         # Actor loss using REINFORCE with heuristic baseline
-        advantage = ((tour_cost - baseline_cost) / baseline_cost).detach()
-        actor_loss = -(advantage * lp_sums).mean()
+        with torch.no_grad():
+            advantage = (tour_cost - baseline_cost)
+            advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
+
+        actor_loss = (advantage * lp_sums).mean()
 
         # Logging
         logger['tour_cost'].append(tour_cost.mean().item())
