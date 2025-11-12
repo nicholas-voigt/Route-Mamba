@@ -40,11 +40,10 @@ class Actor(nn.Module):
         )
         self.tour_constructor = mc.TourConstructor(tour_method)
 
-    def forward(self, batch: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, batch: torch.Tensor):
         """
         Args:
             batch: (B, N, I) - node features with 2D coordinates
-            actions: (B, N, N) - previously taken actions as permutation (for training)
         Returns:
             tours: (B, N) - node indices representing the tour
             log_probs: (B,) - log probability of the entire tour
@@ -63,7 +62,7 @@ class Actor(nn.Module):
         logits = self.policy_decoder(graph_embed, encoded_features)
 
         # 4. Tour Construction: Sample or reconstruct tours
-        tour_perms = self.tour_constructor(logits) if actions is None else actions
+        tour_perms = self.tour_constructor(logits)
         log_probs = torch.sum(logits * tour_perms, dim=(1, 2))  # (B,)
         probs = torch.exp(logits)
         entropies = -torch.sum(logits * probs, dim=(1, 2))  # (B,)
