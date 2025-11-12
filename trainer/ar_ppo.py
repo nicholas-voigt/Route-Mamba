@@ -220,8 +220,8 @@ class ARPPOTrainer:
         baseline_cost = compute_euclidean_tour(baseline_tours)
 
         # Normalized advantage over baseline
-        raw_advantage = ((baseline_cost - actor_cost) / (baseline_cost + 1e-8))  # (B,)
-        advantage = (raw_advantage - raw_advantage.mean()) / (raw_advantage.std() + 1e-8)  # Normalize advantage
+        advantage = ((baseline_cost - actor_cost) / (baseline_cost + 1e-8))  # (B,)
+        # advantage = (raw_advantage - raw_advantage.mean()) / (raw_advantage.std() + 1e-8)  # Normalize advantage
 
         # --- 3. PPO Update (multiple epochs over collected data) ---
         ppo_metrics = {'actor_loss': [], 'entropy': [], 'ratios': [], 'clip_fraction': []}
