@@ -44,7 +44,7 @@ class Actor(nn.Module):
             method = method
         )
 
-    def forward(self, batch):
+    def forward(self, batch: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch: (B, N, I) - node features with 2D coordinates
@@ -69,7 +69,7 @@ class Actor(nn.Module):
 
         # 4. Decoder Workshop: Use Gumbel-Sinkhorn to get soft permutation matrix & hard assignment via tour construction
         soft_perm = self.decoder(biased_score_matrix)  # (B, N, N)
-        hard_perm = self.tour_constructor(soft_perm)
+        hard_perm = self.tour_constructor(soft_perm) if actions is None else actions  # (B, N, N)
 
         return soft_perm, hard_perm
 
