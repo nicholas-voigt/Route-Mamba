@@ -68,7 +68,8 @@ class Actor(nn.Module):
         log_probs = torch.sum(log_probs_matrix * tour_perms, dim=(1, 2))  # (B,)
 
         probs_matrix = torch.softmax(logits, dim=-1)
-        entropies = -torch.sum(log_probs_matrix * probs_matrix, dim=(1, 2))  # (B,)
+        row_entropies = -torch.sum(probs_matrix * log_probs_matrix, dim=-1)  # (B, N)
+        entropies = row_entropies.sum(dim=-1)  # (B,) - sum over N positions
 
         return tour_perms, log_probs, entropies
 
@@ -174,7 +175,7 @@ class ARMambaTrainer:
             advantage = (tour_cost - baseline_cost)
             advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
 
-        actor_loss = (advantage * lp_sums).mean()
+        actor_loss = (advantage * lp_sums).mean() - 0.01 * entropy_sums.mean()
 
         # Logging
         logger['tour_cost'].append(tour_cost.mean().item())
