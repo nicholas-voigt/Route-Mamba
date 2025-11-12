@@ -236,7 +236,6 @@ class PPPOTrainer:
                 'critic_loss': [],
                 'advantage': [],
                 'ratios': [],
-                'entropy': [],
                 'clip_fraction': []
             }
 
@@ -258,7 +257,6 @@ class PPPOTrainer:
             print(f"-  Average Critic Loss: {sum(logger['critic_loss'])/len(logger['critic_loss']):.4f}")
             print(f"-  Average Advantage: {sum(logger['advantage'])/len(logger['advantage']):.4f}")
             print(f"-  Average Policy Ratios: {sum(logger['ratios'])/len(logger['ratios']):.4f}")
-            print(f"-  Average Entropy: {sum(logger['entropy'])/len(logger['entropy']):.4f}")
             print(f"-  Clip Fraction: {sum(logger['clip_fraction'])/len(logger['clip_fraction']):.4f}")
 
             # update learning rate and sinkhorn temperature
@@ -282,7 +280,7 @@ class PPPOTrainer:
         # Forward pass
         with torch.no_grad():
             # Actor forward pass
-            action, lp_sum, _ = self.actor(observation)
+            log_probs, action = self.actor(observation)
             tours = torch.bmm(action.transpose(1, 2), observation)  # (B, N, 2)
             check_feasibility(observation, tours)
             actor_cost = compute_euclidean_tour(tours)
@@ -291,7 +289,7 @@ class PPPOTrainer:
             values = self.critic(observation).squeeze(1)
 
             # Store "old" policy & values
-            old_lp_sum = lp_sum.detach()
+            old_lp_sum = torch.sum(log_probs * action, dim=(1, 2)).detach()  # log-probability sum of the actions taken
             old_values = values.detach()
 
         # --- 2. Calculate Advantage with GAE ---
@@ -304,7 +302,7 @@ class PPPOTrainer:
         advantage = (raw_advantage - raw_advantage.mean()) / (raw_advantage.std() + 1e-6)  # Normalize advantage
 
         # --- 3. PPO Update (multiple epochs over collected data) ---
-        ppo_metrics = {'actor_loss': [], 'critic_loss': [], 'entropy': [], 'ratios': [], 'clip_fraction': []}
+        ppo_metrics = {'actor_loss': [], 'critic_loss': [], 'ratios': [], 'clip_fraction': []}
 
         for _ in range(2):
             clip_param = 0.5
@@ -332,7 +330,8 @@ class PPPOTrainer:
             
             # Actor evaluation and update
             # Re-evaluate actions with current policy
-            _, new_lp_sum, entropy = self.actor(observation, actions=action)
+            log_probs, _ = self.actor(observation, actions=action)
+            new_lp_sum = torch.sum(log_probs * action, dim=(1, 2))  # log-probability sum of the actions taken
             ratios = torch.exp(new_lp_sum - old_lp_sum)  # (B,)
             actor_unclipped = -advantage * ratios
             actor_clipped = -advantage * torch.clamp(ratios, 1 - clip_param, 1 + clip_param)
@@ -351,7 +350,6 @@ class PPPOTrainer:
             with torch.no_grad():
                 clip_fraction = ((ratios - 1.0).abs() > clip_param).float().mean()
             ppo_metrics['actor_loss'].append(actor_loss.item())
-            ppo_metrics['entropy'].append(entropy.mean().item())
             ppo_metrics['ratios'].append(ratios.mean().item())
             ppo_metrics['clip_fraction'].append(clip_fraction.item())
 
@@ -364,7 +362,6 @@ class PPPOTrainer:
         if not warmup_mode:
             logger['actor_loss'].append(sum(ppo_metrics['actor_loss']) / len(ppo_metrics['actor_loss']))
             logger['ratios'].append(sum(ppo_metrics['ratios']) / len(ppo_metrics['ratios']))
-            logger['entropy'].append(sum(ppo_metrics['entropy']) / len(ppo_metrics['entropy']))
             logger['clip_fraction'].append(sum(ppo_metrics['clip_fraction']) / len(ppo_metrics['clip_fraction']))
 
 
