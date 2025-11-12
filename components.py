@@ -548,7 +548,7 @@ class ARPointerDecoder(nn.Module):
         keys = self.key_projection(node_emb) # (B, N, context_dim)
 
         # Create starting state
-        start_emb = self.start_token_emb.expand(B, -1, -1)
+        start_emb = self.start_token_emb.expand(B, -1, -1).squeeze(1)  # (B, E)
         first_node_emb = start_emb
         prev_node_emb = start_emb
 
