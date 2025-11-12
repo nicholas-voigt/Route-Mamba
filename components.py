@@ -556,11 +556,9 @@ class ARPointerDecoder(nn.Module):
             logits = torch.bmm(keys, query.unsqueeze(-1)).squeeze(-1)  # (B, N, context_dim) @ (B, context_dim, 1) -> (B, N, 1) -> (B, N)
             logits = logits.masked_fill(mask, NEG)  # Mask out visited nodes
 
-            # Get probability & log-probability distribution over next nodes
+            # Get probability, log-probability & entropy over next nodes
             probs = F.softmax(logits, dim=-1)
             log_prob_dist = F.log_softmax(logits, dim=-1)
-
-            # Calculate entropy
             entropy_t = -(log_prob_dist * probs).sum(dim=1)
 
             if actions is None:
@@ -575,7 +573,8 @@ class ARPointerDecoder(nn.Module):
             log_prob_t = log_prob_dist.gather(1, next_node_idx.unsqueeze(1)).squeeze(1)  # (B,)
 
             # Store results
-            mask = torch.scatter(mask, 1, next_node_idx.unsqueeze(1), True)
+            mask.scatter_(1, next_node_idx.unsqueeze(1), True)
+
             tours[batch_indices, t] = next_node_idx
             log_probs[batch_indices, t] = log_prob_t
             entropies[batch_indices, t] = entropy_t
