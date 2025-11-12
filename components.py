@@ -538,7 +538,8 @@ class ARPointerDecoder(nn.Module):
         tours = torch.zeros(B, N, dtype=torch.long, device=device)
         log_probs = torch.zeros(B, N, dtype=torch.float32, device=device)
         entropies = torch.zeros(B, N, dtype=torch.float32, device=device)
-        mask = torch.zeros(B, N, dtype=torch.bool, device=device)
+        mask = torch.zeros(B, N, dtype=torch.bool, device=device, requires_grad=False)
+        assert not mask.requires_grad, "Mask should not require gradients."
         
         # Pre-compute keys for all nodes for efficiency
         keys = self.key_projection(node_emb) # (B, N, context_dim)

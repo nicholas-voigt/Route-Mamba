@@ -139,6 +139,7 @@ class ARPPOTrainer:
 
     def train(self):
         torch.set_grad_enabled(True)
+        torch.autograd.set_detect_anomaly(True)
         self.model.train()
 
 
