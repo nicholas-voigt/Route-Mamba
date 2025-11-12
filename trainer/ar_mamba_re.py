@@ -11,7 +11,7 @@ from utils.logger import log_gradients
 
 
 class Actor(nn.Module):
-    def __init__(self, input_dim, embed_dim, mamba_hidden_dim, mamba_layers, gs_tau, gs_iters, dropout):
+    def __init__(self, input_dim, embed_dim, mamba_hidden_dim, mamba_layers, gs_tau, gs_iters, tour_method, dropout):
         super().__init__()
 
         # Model components
@@ -38,7 +38,7 @@ class Actor(nn.Module):
             gs_tau = gs_tau,
             gs_iters = gs_iters
         )
-        self.tour_constructor = mc.TourConstructor(method='greedy')
+        self.tour_constructor = mc.TourConstructor(tour_method)
 
     def forward(self, batch: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -85,8 +85,9 @@ class ARMambaTrainer:
                 embed_dim = opts.embedding_dim,
                 mamba_hidden_dim = opts.mamba_hidden_dim,
                 mamba_layers = opts.mamba_layers,
-                gs_tau = opts.gs_tau,
-                gs_iters = opts.gs_iters,
+                gs_tau = opts.sinkhorn_tau,
+                gs_iters = opts.sinkhorn_iters,
+                tour_method = opts.tour_method,
                 dropout = opts.dropout
             ).to(opts.device)
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=opts.actor_lr)
