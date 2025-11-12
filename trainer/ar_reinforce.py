@@ -148,19 +148,16 @@ class ARTrainer:
         baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
         baseline_cost = compute_euclidean_tour(baseline_tours)
 
-        # Baseline Logging
-        logger['baseline_cost'].append(baseline_cost.mean().item())
-
         # Actor loss using REINFORCE with heuristic baseline
-        log_likelihood = -lp_sums
-        advantage = ((tour_cost - baseline_cost) / baseline_cost) * self.opts.reward_scale  # Apply reward scaling
-        actor_loss = advantage.mean() - 0.1 * entropy_sums.mean()
+        advantage = ((tour_cost - baseline_cost) / baseline_cost).detach()
+        actor_loss = (advantage * lp_sums).mean()
 
         # Logging
         logger['tour_cost'].append(tour_cost.mean().item())
+        logger['baseline_cost'].append(baseline_cost.mean().item())
         logger['actor_loss'].append(actor_loss.item())
         logger['advantage'].append(advantage.mean().item())
-        logger['log_likelihood'].append(log_likelihood.mean().item())
+        logger['log_likelihood'].append(lp_sums.mean().item())
         logger['entropy'].append(entropy_sums.mean().item())
 
         # Actor Update
