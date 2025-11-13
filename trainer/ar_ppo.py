@@ -53,68 +53,6 @@ class Actor(nn.Module):
         return tour_idxs, torch.sum(log_probs, dim=1), torch.sum(entropies, dim=1)
 
 
-# class Actor(nn.Module):
-#     def __init__(self, input_dim, embed_dim, mamba_hidden_dim, mamba_layers, gs_tau, gs_iters, dropout):
-#         super().__init__()
-
-#         # Model components
-#         self.feature_embedder = mc.StructuralEmbeddingNet(
-#             input_dim = input_dim,
-#             embedding_dim = embed_dim
-#         )
-#         self.embedding_norm = nn.LayerNorm(embed_dim)
-#         self.encoder = mc.BidirectionalMambaEncoder(
-#             mamba_model_size = embed_dim,
-#             mamba_hidden_state_size = mamba_hidden_dim,
-#             dropout = dropout,
-#             mamba_layers = mamba_layers
-#         )
-#         self.encoder_norm = nn.LayerNorm(2 * embed_dim)
-#         self.score_constructor = mc.ARMambaDecoder(
-#             embed_dim = 2 * embed_dim,
-#             mamba_hidden_dim = mamba_hidden_dim,
-#             mamba_layers = mamba_layers,
-#             key_proj_bias = False,
-#             dropout = dropout
-#         )
-#         self.score_norm = mc.GumbelSinkhornDecoder(
-#             gs_tau = gs_tau,
-#             gs_iters = gs_iters
-#         )
-#         self.tour_constructor = mc.TourConstructor(method='greedy')
-
-#     def forward(self, batch: torch.Tensor, actions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-#         """
-#         Args:
-#             batch: (B, N, I) - node features with 2D coordinates
-#             actions: (B, N, N) - previously taken actions as permutation (for training)
-#         Returns:
-#             tours: (B, N) - node indices representing the tour
-#             log_probs: (B,) - log probability of the entire tour
-#             entropies: (B,) - entropy of the tours probability distribution
-#         """
-#         # 1. Create Embeddings & normalize
-#         embeddings = self.feature_embedder(batch)  # (B, N, E)
-#         embeddings = self.embedding_norm(embeddings)  # (B, N, E)
-
-#         # 2. Encoder: Layered Mamba blocks with internal Pre-LN
-#         encoded_features = self.encoder(embeddings)
-#         encoded_features = self.encoder_norm(encoded_features)   # (B, N, 2E)
-#         graph_embed = encoded_features.mean(dim=1)  # (B, 2E)
-
-#         # 3. Score Construction: Decode tours using Mamba + attention + Sinkhorn
-#         logits = self.score_constructor(graph_embed, encoded_features)
-#         norm_logits = self.score_norm(logits)
-
-#         # 4. Tour Construction: Sample or reconstruct tours
-#         tour_perms = self.tour_constructor(norm_logits) if actions is None else actions
-#         log_probs = torch.sum(norm_logits * tour_perms, dim=(1, 2))  # (B,)
-#         probs = torch.exp(norm_logits)
-#         entropies = -torch.sum(norm_logits * probs, dim=(1, 2))  # (B,)
-
-#         return tour_perms, log_probs, entropies
-
-
 class ARPPOTrainer: 
     def __init__(self, opts):
         self.opts = opts
@@ -129,8 +67,6 @@ class ARPPOTrainer:
                 embed_dim = opts.embedding_dim,
                 mamba_hidden_dim = opts.mamba_hidden_dim,
                 mamba_layers = opts.mamba_layers,
-                # gs_tau = opts.gs_tau,
-                # gs_iters = opts.gs_iters,
                 dropout = opts.dropout
             ).to(opts.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=opts.actor_lr)
@@ -192,10 +128,9 @@ class ARPPOTrainer:
             # update learning rates
             self.scheduler.step()
 
-            # if (self.opts.checkpoint_epochs != 0 and epoch % self.opts.checkpoint_epochs == 0) or epoch == self.opts.n_epochs - 1:
-            #     torch.save(self.actor, f"{self.opts.save_dir}/actor_{self.opts.problem}_epoch{epoch + 1}.pt")
-            #     torch.save(self.critic, f"{self.opts.save_dir}/critic_{self.opts.problem}_epoch{epoch + 1}.pt")
-            #     print(f"Saved actor and critic models at epoch {epoch + 1} to {self.opts.save_dir}")
+            if (self.opts.checkpoint_epochs != 0 and epoch % self.opts.checkpoint_epochs == 0) or epoch == self.opts.n_epochs - 1:
+                torch.save(self.model, f"{self.opts.save_dir}/actor_{self.opts.problem}_epoch{epoch + 1}.pt")
+                print(f"Saved actor model at epoch {epoch + 1} to {self.opts.save_dir}")
 
 
     def train_batch(self, batch: dict, logger: dict):
@@ -221,13 +156,13 @@ class ARPPOTrainer:
         baseline_cost = compute_euclidean_tour(baseline_tours)
 
         # Normalized advantage over baseline
-        advantage = ((baseline_cost - actor_cost) / (baseline_cost + 1e-8))  # (B,)
-        # advantage = (raw_advantage - raw_advantage.mean()) / (raw_advantage.std() + 1e-8)  # Normalize advantage
+        raw_advantage = ((baseline_cost - actor_cost) / (baseline_cost + 1e-8))  # (B,)
+        advantage = (raw_advantage - raw_advantage.mean()) / (raw_advantage.std() + 1e-8)  # Normalize advantage
 
         # --- 3. PPO Update (multiple epochs over collected data) ---
         ppo_metrics = {'actor_loss': [], 'entropy': [], 'ratios': [], 'clip_fraction': []}
 
-        for _ in range(2):
+        for _ in range(4):
             # Re-evaluate actions with current policy
             _, new_lp_sum, entropy = self.model(observation, actions=action)
 
@@ -238,12 +173,9 @@ class ARPPOTrainer:
             actor_clipped = -advantage * torch.clamp(ratios, 1 - clip_param, 1 + clip_param)
             actor_loss = torch.max(actor_unclipped, actor_clipped).mean()
 
-            # Total loss
-            total_loss = actor_loss - 0.01 * entropy.mean()
-
             # Backpropagation
             self.optimizer.zero_grad()
-            total_loss.backward()
+            actor_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             if self.gradient_check:
                 log_gradients(self.model)
