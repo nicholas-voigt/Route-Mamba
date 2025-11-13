@@ -162,7 +162,7 @@ class ARPPOTrainer:
         # --- 3. PPO Update (multiple epochs over collected data) ---
         ppo_metrics = {'actor_loss': [], 'entropy': [], 'ratios': [], 'clip_fraction': []}
 
-        for _ in range(4):
+        for _ in range(2):
             # Re-evaluate actions with current policy
             _, new_lp_sum, entropy = self.model(observation, actions=action)
 
