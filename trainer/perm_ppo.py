@@ -127,40 +127,42 @@ class PPPOTrainer:
         self.opts = opts
 
         # Initialize the actor with optimizer and learning rate scheduler
+        self.actor = Actor(
+            input_dim = opts.input_dim,
+            embedding_dim = opts.embedding_dim,
+            mamba_hidden_dim = opts.mamba_hidden_dim,
+            mamba_layers = opts.mamba_layers,
+            num_attention_heads = opts.num_attention_heads,
+            ffn_expansion = opts.ffn_expansion,
+            initial_identity_bias = opts.initial_identity_bias,
+            gs_tau = opts.sinkhorn_tau,
+            gs_iters = opts.sinkhorn_iters,
+            method = opts.tour_method,
+            dropout = opts.dropout
+        ).to(opts.device)
+
         if opts.actor_load_path:
             print(f"Loading actor model from {opts.actor_load_path}")
             self.actor = torch.load(opts.actor_load_path, map_location=opts.device)
-        else:
-            self.actor = Actor(
-                input_dim = opts.input_dim,
-                embedding_dim = opts.embedding_dim,
-                mamba_hidden_dim = opts.mamba_hidden_dim,
-                mamba_layers = opts.mamba_layers,
-                num_attention_heads = opts.num_attention_heads,
-                ffn_expansion = opts.ffn_expansion,
-                initial_identity_bias = opts.initial_identity_bias,
-                gs_tau = opts.sinkhorn_tau,
-                gs_iters = opts.sinkhorn_iters,
-                method = opts.tour_method,
-                dropout = opts.dropout
-            ).to(opts.device)
+
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=opts.actor_lr)
         self.actor_scheduler = optim.lr_scheduler.LambdaLR(self.actor_optimizer, lambda epoch: opts.actor_lr_decay ** epoch)
 
         # Initialize the critic with optimizer and learning rate scheduler
+        self.critic = Critic(
+            input_dim = opts.input_dim,
+            embedding_dim = opts.embedding_dim,
+            mamba_hidden_dim = opts.mamba_hidden_dim,
+            mamba_layers = opts.mamba_layers,
+            dropout = opts.dropout,
+            mlp_ff_dim = opts.mlp_ff_dim,
+            mlp_embedding_dim = opts.mlp_embedding_dim
+        ).to(opts.device)
+
         if opts.critic_load_path:
             print(f"Loading critic model from {opts.critic_load_path}")
             self.critic = torch.load(opts.critic_load_path, map_location=opts.device)
-        else:
-            self.critic = Critic(
-                input_dim = opts.input_dim,
-                embedding_dim = opts.embedding_dim,
-                mamba_hidden_dim = opts.mamba_hidden_dim,
-                mamba_layers = opts.mamba_layers,
-                dropout = opts.dropout,
-                mlp_ff_dim = opts.mlp_ff_dim,
-                mlp_embedding_dim = opts.mlp_embedding_dim
-            ).to(opts.device)
+
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=opts.critic_lr)
         self.critic_scheduler = optim.lr_scheduler.LambdaLR(self.critic_optimizer, lambda epoch: opts.critic_lr_decay ** epoch)
 
@@ -370,45 +372,51 @@ class PPPOTrainer:
 
     def start_evaluation(self, problem):
         # prepare dataset
-        val_dataset = problem.make_dataset(size=self.opts.graph_size, num_samples=self.opts.eval_size, filename=self.opts.val_dataset)
+        val_dataset = problem.make_dataset(
+            size=self.opts.graph_size, num_samples=self.opts.eval_size, filename=self.opts.val_dataset)
         dataloader = DataLoader(val_dataset, batch_size=self.opts.batch_size)
 
         # Logging
         print("\nStarting Evaluation:")
         print(f"-  Evaluating {self.opts.problem}-{self.opts.graph_size}")
         print(f"-  Eval Dataset Size: {len(val_dataset)}")
-        print(f"-  Batch Size: {self.opts.batch_size}")
 
         logger = {
-            'actual_cost': []
+            'tour_cost': [],
+            'baseline_cost': [],
         }
 
         # start evaluation loop
         self.eval()
         start_time = time.time()
+
         with torch.no_grad():
             for _, batch in enumerate(tqdm(dataloader, disable=self.opts.no_progress_bar)):
                 self.evaluate_batch(batch, logger)
 
-        eval_duration = time.time() - start_time
+        end_time = time.time() - start_time
         print(f"Evaluation completed. Results:")
-        print(f"-  Runtime: {eval_duration:.2f}s")
-        print(f"-  Average Cost: {sum(logger['actual_cost'])/len(logger['actual_cost']):.4f}")
+        print(f"-  Runtime: {end_time:.2f}s")
+        print(f"-  Average Tour Cost: {sum(logger['tour_cost'])/len(logger['tour_cost']):.4f}")
+        print(f"-  Average Baseline Cost: {sum(logger['baseline_cost'])/len(logger['baseline_cost']):.4f}")
+    
 
-        # Precise logging of evaluation results
-        print("\n--- Batch-Specific Evaluation Results ---")
-        for i, cost in enumerate(logger['actual_cost']):
-            print(f"Batch {i+1}: Average Cost: {cost:.4f}")
-
-
-    def evaluate_batch(self, batch: dict, logger: dict):
-        # get observations through heuristic from the environment
+    def evaluate_batch(self, batch, logger):
+        # get observations (Polar-ordered coordinates (canonical representation)) from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
-        observation = get_heuristic_tours(batch['coordinates'], self.opts.initial_tours)
+        observation = get_heuristic_tours(batch['coordinates'], self.opts.initial_tours) # (B, N, 2)
 
-        # Actor forward pass to generate discrete actions (tour permutations) and probabilistic actions (tour distributions)
+        # Actor forward pass
         _, action = self.actor(observation)
+        tours = torch.bmm(action.transpose(1, 2), observation)  # (B, N, 2)
+        tour_cost = compute_euclidean_tour(tours)
 
-        # Calculate actual cost of the tours generated by the actor
-        actual_cost = compute_euclidean_tour(torch.bmm(action.transpose(1, 2), observation))
-        logger['actual_cost'].append(actual_cost.mean().item())
+        check_feasibility(observation, tours)
+
+        # Heuristic baseline (greedy)
+        baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
+        baseline_cost = compute_euclidean_tour(baseline_tours)
+
+        # Logging
+        logger['tour_cost'].append(tour_cost.mean().item())
+        logger['baseline_cost'].append(baseline_cost.mean().item())

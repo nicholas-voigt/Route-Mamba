@@ -69,12 +69,6 @@ class ARTrainer:
 
         if opts.actor_load_path:
             print(f"Loading actor model from {opts.actor_load_path}")
-            # ✅ FIX: Remap old module name to new one
-            import sys
-            import trainer.ar_reinforce as ar_reinforce
-            
-            # Create alias for old module name
-            sys.modules['trainer.ar_standard_re'] = ar_reinforce
             self.actor = torch.load(opts.actor_load_path, map_location=opts.device, weights_only=False)
 
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=opts.actor_lr)
