@@ -61,9 +61,9 @@ pip3 install -q --no-cache-dir --no-build-isolation mamba-ssm
 
 # Submit your job to the cluster
 TRAINER="spg"
-GRAPH_SIZE=50
+GRAPH_SIZE=20
 BATCH_SIZE=512
 VAL_DATASET_PATH="./datasets/tsp_20_10000.pkl"
 ACTOR_PATH="outputs/run_name_20251113T021451/actor_tsp_epoch40.pt"
 
-srun --gres=gpu:1 python run.py --graph_size $GRAPH_SIZE --val_dataset $VAL_DATASET_PATH --actor_load_path $ACTOR_PATH --eval_only
+srun --gres=gpu:1 python run.py --trainer $TRAINER --graph_size $GRAPH_SIZE --batch_size $BATCH_SIZE --val_dataset $VAL_DATASET_PATH --actor_load_path $ACTOR_PATH --eval_only --no_progress_bar
