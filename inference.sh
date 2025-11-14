@@ -60,7 +60,7 @@ pip3 install -q --no-cache-dir torch torchvision torchaudio --index-url https://
 pip3 install -q --no-cache-dir --no-build-isolation mamba-ssm
 
 # Submit your job to the cluster
-TRAINER="spg"
+TRAINER="ar"
 GRAPH_SIZE=20
 BATCH_SIZE=512
 VAL_DATASET_PATH="./datasets/tsp_20_10000.pkl"
