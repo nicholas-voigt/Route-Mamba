@@ -177,35 +177,48 @@ class ARTrainer:
         val_dataset = problem.make_dataset(
             size=self.opts.graph_size, num_samples=self.opts.eval_size, filename=self.opts.val_dataset)
         dataloader = DataLoader(val_dataset, batch_size=self.opts.batch_size)
-        self.eval()
 
         # Logging
-        logger = {
-            'initial_tour_length': [],
-            'new_tour_length': [],
-            'reward': []
-        }
-
-        # start evaluation loop
         print("\nStarting Evaluation:")
         print(f"-  Evaluating {self.opts.problem}-{self.opts.graph_size}")
         print(f"-  Eval Dataset Size: {len(val_dataset)}")
 
+        logger = {
+            'tour_cost': [],
+            'baseline_cost': [],
+        }
+
+        # start evaluation loop
+        self.eval()
+        start_time = time.time()
+
         with torch.no_grad():
             for _, batch in enumerate(tqdm(dataloader, disable=self.opts.no_progress_bar)):
                 self.evaluate_batch(batch, logger)
+
+        end_time = time.time() - start_time
+        print(f"Evaluation completed. Results:")
+        print(f"-  Runtime: {end_time:.2f}s")
+        print(f"-  Average Tour Cost: {sum(logger['tour_cost'])/len(logger['tour_cost']):.4f}")
+        print(f"-  Average Baseline Cost: {sum(logger['baseline_cost'])/len(logger['baseline_cost']):.4f}")
     
 
     def evaluate_batch(self, batch, logger):
-        # get observations (initial tours) through heuristic from the environment
+        # get observations (Polar-ordered coordinates (canonical representation)) from the environment
         batch = {k: v.to(self.opts.device) for k, v in batch.items()}
-        coords = batch['coordinates']
-        initial_tours = get_heuristic_tours(coords, self.opts.tour_heuristic)
-        initial_tour_lengths = compute_euclidean_tour(initial_tours)
+        observation = get_heuristic_tours(batch['coordinates'], self.opts.initial_tours) # (B, N, 2)
 
-        # Actor forward pass & tour construction & reward calculation
-        dense_actions, discrete_actions = self.actor(initial_tours)
+        # Actor forward pass
+        tour_indices, _, _ = self.actor(observation) # (B, N), (B,), (B,)
+        tours = torch.gather(observation, 1, tour_indices.unsqueeze(-1).expand(-1, -1, observation.size(-1)))  # (B, N, 2)
+        tour_cost = compute_euclidean_tour(tours)
 
-        # Reward calculation, TODO: Include expected reward for soft actions?
-        new_tour_lengths = compute_euclidean_tour(torch.bmm(discrete_actions.transpose(1, 2), initial_tours))
-        reward = (initial_tour_lengths - new_tour_lengths) * self.opts.reward_scale  # Apply reward scaling
+        check_feasibility(observation, tours)
+
+        # Heuristic baseline (greedy)
+        baseline_tours = get_heuristic_tours(observation, self.opts.baseline_tours)
+        baseline_cost = compute_euclidean_tour(baseline_tours)
+
+        # Logging
+        logger['tour_cost'].append(tour_cost.mean().item())
+        logger['baseline_cost'].append(baseline_cost.mean().item())

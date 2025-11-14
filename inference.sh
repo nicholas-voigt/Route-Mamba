@@ -11,15 +11,14 @@
 #SBATCH --cpus-per-task=4           # Number of CPU to request for the job
 #SBATCH --mem=12GB                  # How much memory does your job require?
 #SBATCH --gres=gpu:1                # Do you require GPUS? If not delete this line
-#SBATCH --time=00-02:00:00          # How long to run the job for? Jobs exceed this time will be terminated
+#SBATCH --time=00-24:00:00          # How long to run the job for? Jobs exceed this time will be terminated
                                     # Format <DD-HH:MM:SS> eg. 5 days 05-00:00:00
                                     # Format <DD-HH:MM:SS> eg. 24 hours 1-00:00:00 or 24:00:00
-#SBATCH --mail-type=BEGIN,END,FAIL  # When should you receive an email?
-#SBATCH --output=logs/%u.%j.out        # Where should the log files go?
+#SBATCH --mail-type=END,FAIL        # When should you receive an email?
+#SBATCH --output=logs/%u.%j.out     # Where should the log files go?
                                     # You must provide an absolute path eg /common/home/module/username/
                                     # If no paths are provided, the output file will be placed in your current working directory
-#SBATCH --requeue                   # Remove if you do not want the workload scheduler to requeue your job after preemption
-#SBATCH --constraint=skylake        # Constrain to skylake nodes
+#SBATCH --constraint="EYPC&48gb"
 
 ################################################################
 ## EDIT AFTER THIS LINE IF YOU ARE OKAY WITH DEFAULT SETTINGS ##
@@ -42,7 +41,7 @@ module load Python/3.13.1-GCCcore-13.3.0
 module load cuDNN/9.5.0.50-CUDA-12.6.0
 
 # Create a virtual environment can be commented off if you already have a virtual environment
-# python3 -m venv ~/Capstone
+python3 -m venv ~/Capstone
 
 # This command assumes that you've already created the environment previously
 # We're using an absolute path here. You may use a relative path, as long as SRUN is execute in the same working directory
@@ -52,10 +51,19 @@ source ~/Capstone/bin/activate
 srun whichgpu
 
 # If you require any packages, install it as usual before the srun job submission.
-pip3 install -q numpy
-pip3 install -q scipy
-pip3 install -q torch torchvision torchaudio
-pip3 install -q mamba_ssm
+pip3 install -q --no-cache-dir numpy
+pip3 install -q --no-cache-dir scipy
+pip3 install -q --no-cache-dir tqdm
+pip3 install -q --no-cache-dir packaging # Required by mamba-ssm
+pip3 install -q --no-cache-dir wheel # Required by mamba-ssm
+pip3 install -q --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip3 install -q --no-cache-dir --no-build-isolation mamba-ssm
 
 # Submit your job to the cluster
-srun --gres=gpu:1 python run.py --eval_only --load_path outputs/run_name_20250818T185749/checkpoint_run_name_20250818T185749_epoch3.pt
+TRAINER="spg"
+GRAPH_SIZE=50
+BATCH_SIZE=512
+VAL_DATASET_PATH="./datasets/tsp_20_10000.pkl"
+ACTOR_PATH="outputs/run_name_20251113T021451/actor_tsp_epoch40.pt"
+
+srun --gres=gpu:1 python run.py --graph_size $GRAPH_SIZE --val_dataset $VAL_DATASET_PATH --actor_load_path $ACTOR_PATH --eval_only
