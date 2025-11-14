@@ -62,7 +62,7 @@ pip3 install -q --no-cache-dir --no-build-isolation mamba-ssm
 # Submit your job to the cluster
 ## Parameters:
 TRAINER="ar_ppo"
-GRAPH_SIZE=50
+GRAPH_SIZE=100
 PROBLEM_SIZE=100000
 N_EPOCHS=40
 BATCH_SIZE=512
