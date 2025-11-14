@@ -61,7 +61,7 @@ class ARTrainer:
         # Initialize the actor with optimizer and learning rate scheduler
         if opts.actor_load_path:
             print(f"Loading actor model from {opts.actor_load_path}")
-            self.actor = torch.load(opts.actor_load_path, map_location=opts.device)
+            self.actor = torch.load(opts.actor_load_path, map_location=opts.device, weights_only=False)
         else:
             self.actor = Actor(
                 input_dim = opts.input_dim,
