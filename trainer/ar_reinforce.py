@@ -59,17 +59,24 @@ class ARTrainer:
         self.opts = opts
 
         # Initialize the actor with optimizer and learning rate scheduler
+        self.actor = Actor(
+            input_dim = opts.input_dim,
+            embed_dim = opts.embedding_dim,
+            mamba_hidden_dim = opts.mamba_hidden_dim,
+            mamba_layers = opts.mamba_layers,
+            dropout = opts.dropout
+        ).to(opts.device)
+
         if opts.actor_load_path:
             print(f"Loading actor model from {opts.actor_load_path}")
+            # ✅ FIX: Remap old module name to new one
+            import sys
+            import trainer.ar_reinforce as ar_reinforce
+            
+            # Create alias for old module name
+            sys.modules['trainer.ar_standard_re'] = ar_reinforce
             self.actor = torch.load(opts.actor_load_path, map_location=opts.device, weights_only=False)
-        else:
-            self.actor = Actor(
-                input_dim = opts.input_dim,
-                embed_dim = opts.embedding_dim,
-                mamba_hidden_dim = opts.mamba_hidden_dim,
-                mamba_layers = opts.mamba_layers,
-                dropout = opts.dropout
-            ).to(opts.device)
+
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=opts.actor_lr)
         self.actor_scheduler = optim.lr_scheduler.LambdaLR(self.actor_optimizer, lambda epoch: opts.actor_lr_decay ** epoch)
 
